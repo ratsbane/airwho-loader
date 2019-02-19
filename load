@@ -1,0 +1,160 @@
+#!/usr/bin/perl
+
+use DBI;
+use JSON;
+my $home = '/var/aircraft';
+
+my $mysql = DBI->connect('DBI:mysql:airwho;host=localhost', 'django', 'fjfjfj');
+
+if (my ($y, $m, $d) = $ARGV[0]=~/(\d\d\d\d)-(\d\d)-(\d\d)/) {
+  print "Loading files for $y-$m-$d\n";
+  load_one_date_into_temp($y, $m, $d);
+  }
+else {
+  print "Loading all files\n";
+  my $all = all_files();
+  print join("\n", @{$all})."\n";
+  fo
+  }
+
+
+sub most_recent_file_in_db {
+
+  }
+
+
+die;
+
+sub all_files {
+
+  my @all;  # The array we're going to push the list of unique files onto.
+  my $prev_day_size = undef; 
+  my @years = grep {/\d{4}/} <"$home/*">;
+  #print join(', ', @years)."\n\n";
+
+  foreach my $year(@years) {
+    my @days = <"$year/*">;
+    foreach my $day(@days) {
+      # Many files are repeats of previous day, because the FAA hadn't updated the file when we downloaded it.  This uses the files size to exclude those duplicates
+      my $s = -s $day;
+      if ($s != $prev_day_size) {
+        $prev_day_size = $s;
+	push @all, $day;
+        }
+      }
+    }
+  return \@all;
+  }
+
+
+sub load_one_date_into_temp {
+  my ($y, $m, $d, $filename) = @_;
+  print "Loading $date into temp\n";
+
+  # If the source file isn't already copied to the temp directory, do so.
+  unless (-e "$home/temp/$y-$m-$d.zip") {
+    unless ($filename) {$filename=lookup_filename($y, $m, $d);}
+    if ($filename) {
+      `rm -r $home/temp`;
+      `cp $home/$y/$filename temp/$y-$m-$d.zip`;
+      }
+    else {die "Couldn't find a file for $y-$m-$d\n";}
+    }
+
+  # If the source file is not already unzipped, unzip it.
+  unless (-e "$home/temp/MASTER.txt") {
+    `unzip $home/temp/$y-$m-$d.zip -d $home/temp`;
+    }
+
+  # get the field names from the first row
+  open my $f, '<', "$home/temp/MASTER.txt";;
+  my $fields = <$f>;
+  chomp $fields;
+  $fields =~ s/\W+$//;  # Removes comma and any other odd characters at the end of the line
+  $fields =~ s/^\W+//;  # Removes comma and any other odd characters at the front of the line
+
+  print $fields;
+  # Split the header into an array of field names, changing all of the dashes, spaces, and parentheses to underscores
+  # and then removing leading and trailing underscores from each field name
+  @fields = map { local $_=$_; s/^_|_$//g; lc $_} map { local $_=$_; s/[- ()]/_/g; $_ } split ',', $fields;
+  print join(', ', @fields)."\n";
+
+  create_table(\@fields);
+  }
+
+
+# Given a year, month, and day, return the filename for that date.  If it doesn't exist, return false.
+sub lookup_filename {
+  my ($y, $m, $d) = @_;
+  my ($filename) = grep {/$y-$m-$d/} <"$home/$y/*">;
+  #die "* * * * * the filename is $filename * * * * *\n";
+  return $filename;
+  }
+
+
+sub fields {
+  return { n_number => 'varchar(5)',
+	   serial_number => 'varchar(30)',
+           mfr_mdl_code => 'varchar(7)',
+           eng_mfr_mdl => 'varchar(5)',
+           year_mfr => 'varchar(4)',
+           type_registrant => 'varchar(1)',
+           name => 'varchar(50)',
+           street => 'varchar(33)',
+           street2 => 'varchar(33)',
+           city => 'varchar(18)',
+           state => 'varchar(2)',
+           zip_code => 'varchar(10)',
+           region => 'varchar(1)',
+           county => 'varchar(3)',
+           country => 'varchar(2)',
+           last_action_date => 'date',  # YYYY/MM/DD
+           cert_issue_date => 'date', # YYYY/MM/DD 
+           certification => 'varchar(10)',  # this is the big chunk of data that contains other fields
+           type_aircraft => 'varchar(1)', 
+           type_engine => 'varchar(2)', 
+           status_code => 'varchar(2)',
+           mode_s_code => 'varchar(8)',
+           fract_owner => 'varchar(1)',
+           air_worth_date => 'date',
+           other_names_1 => 'varchar(50)',
+           other_names_2 => 'varchar(50)',
+           other_names_3 => 'varchar(50)',
+           other_names_4 => 'varchar(50)',
+           other_names_5 => 'varchar(50)',
+           expiration_date => 'date',
+           unique_id => 'varchar(8)',
+           kit_mfr => 'varchar(30)',
+           kit_model => 'varchar(20)',
+           mode_s_code_hex => 'varchar(10)'
+           };
+  }
+
+
+sub create_table {
+  my @fields = @{+shift};
+  my $field_definitions = fields();
+  my $query = "create table if not exists MASTER (".(join(', ', map { "$_ $field_definitions->{$_}" } @fields ) ).")";
+  print "\n\n$query\n\n";
+  $mysql->do($query);
+  $mysql->do("truncate MASTER"); # because of the "if not exists" clause we might not have created a new table.  In either case, ensure the table is empty.
+  load_data(\@fields, $field_definitions);
+  }
+
+sub load_data {
+  my @fields = @{+shift};
+  my $field_definitions = shift;
+  $query = "load data local infile '$home/temp/MASTER.txt' into table MASTER fields terminated by ',' enclosed by '\"' lines terminated by '\\r\\n' ignore 1 lines (".
+           join(',', map {"\@$_"} @fields).") set ".
+	   join(', ', map {"$_ = ".($field_definitions->{$_} eq 'date' ? "str_to_date(\@$_, '%Y%m%d%')" : "RTRIM(\@$_)") } @fields);
+  print "$query\n\n";
+  $mysql->do($query);
+  if ($mysql->errstr) {print "Error: ".$mysql->errstr."\n";}
+  print "Data loaded.\n";
+  }
+
+
+
+
+# $mysql->do("create index address_city on $tablename(res_street_address, res_city_desc);");
+ 
