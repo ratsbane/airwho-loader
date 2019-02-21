@@ -2,35 +2,108 @@
 
 use DBI;
 use JSON;
-my $home = '/var/aircraft';
+use Getopt::Long;
 
 my $mysql = DBI->connect('DBI:mysql:airwho;host=localhost', 'django', 'fjfjfj');
 
-if (my ($y, $m, $d) = $ARGV[0]=~/(\d\d\d\d)-(\d\d)-(\d\d)/) {
+
+my $home = '/var/aircraft';
+my @all = all_files();
+
+if ($ARGV[0] eq 'backwards') {
+  # Go through all of the files in reverse chron order and load the master_changes table
+  load_backwards();
+  }
+elsif (my ($y, $m, $d) = $ARGV[0]=~/(\d\d\d\d)-(\d\d)-(\d\d)/) {
   print "Loading files for $y-$m-$d\n";
-  load_one_date_into_temp($y, $m, $d);
+  $filename=lookup_filename($y, $m, $d);
+  copy_and_unzip_file_into_temp($filename);
+  get_field_names_from_current_file();
   }
 else {
   print "Loading all files\n";
-  my $all = all_files();
   print join("\n", @{$all})."\n";
-  fo
-  }
-
-
-sub most_recent_file_in_db {
-
   }
 
 
 die;
+
+
+sub load_backwards {
+
+  my $first;  # index in @all of the first file we're going to load.  We will compare this file with the next-newest one.
+
+  # find out the most recent file represented in master_changes.  Starting with that file (because we can't be sure that the load of that file was successful)
+  # re-load the file (load should be idempotent) and then compare the previous file and load that until we get to the first file.
+  # Compare each of the fields with the previous file.  Either the fields must be the same or missing completely in the older file.  Otherwise, insert the row into master_history.
+  ($min_date) = @{$mysql->selectcol_arrayref('select min(date_from) from master_changes')};
+  print "min_date is $min_date\n\n";
+  if ($min_date) {
+    # find the index in @all of the file with date min_date
+    for (my $i=0; $i<$#all and (${date_from_filename($all[$i])}[0] le $min_date); $i++) {$first=$i;}}
+  else {
+    # start with the most recent file
+    $first = $#all-1;
+    print "The most recent file is $all[$first]\n\n";
+    }
+  # Go through each file from $first to the last one
+  my $new = get_file($all[$first+1]);
+  for (my $i=$first; $i>=0; $i--) {
+    print "Comparing $i with $i+1: $all[$i] with $all[$i+1]\n";
+    my $old = get_file($all[$i]);
+    compare_two_datasets($old, $new);
+    my $new=$old;
+    }
+  }
+
+sub  trim { my $s = shift; $s =~ s/^\s+|\s+$//g; return $s };
+
+sub compare_two_datasets {
+  my @old = @{+shift};
+  my @new = @{+shift};
+  # Convert $new into a hash
+  #print "\@old is ".to_json([@old[24,25]])."\n\n";
+  #print "\@new is ".to_json([@new[24,25]])."\n\n";
+  # The serial number is in position 1 and mfg/model code is in position 2.  Use that as the hash key.
+  # The "unique_id" field might be better but that field is not present in the earlier files; it was added later.
+  %new =  map { ($_->[2].'|'.$_->[1]) => [ $_->[0], @{$_}[3..20] ] } @new;
+  %old =  map { ($_->[2].'|'.$_->[1]) => [ $_->[0], @{$_}[3..20] ] } @old;
+  # Iterate through $old, looking for anything not in $new - that will give us deleted records
+  foreach $n(@new) {
+    unless ($old{ $n->[2].'|'.$n->[1]}) {print "Added in new: ".($n->[2].'|'.$n->[1])."\n\n";}
+    }
+  # Iterate through $new, looking for anything not in $old - that will give us added records. Get the changed records also on this pass.
+  foreach $o(@old) {
+    unless ($new{ $o->[2].'|'.$o->[1]}) {print "Removed in new: ".($o->[2].'|'.$o->[1])."\n\n";}
+    unless ($new{ $o->[2].'|'.$o->[1]} ~~ $old{ $o->[2].'|'.$o->[1]}) {print "Changed: ".($o->[2].'|'.$o->[1])."\n\n";}
+    }
+  die;
+  }
+
+sub get_file {
+  my $filename=shift;
+  copy_and_unzip_file_into_temp($filename);
+  ($d)=date_from_filename($filename);
+  open my $f, '<', "$home/temp/MASTER.txt";
+  read $f, my $buffer, -s $filename;
+  my @rows = split("\r\n", $buffer);
+  @rows = map { [ map {trim($_)} split /,\W*/, $_ ] } @rows;
+  print "Check this out: ".join("\n", @{$rows[56]})."\n\n";
+  return \@rows;
+  }
+
+
+sub date_from_filename {
+  my $filename=shift;
+  my ($y, $m, $d) = $filename =~ /(\d{4})-(\d{2})-(\d{2})/;
+  return ("$y-$m-$d", $y, $m, $d);
+  }
 
 sub all_files {
 
   my @all;  # The array we're going to push the list of unique files onto.
   my $prev_day_size = undef; 
   my @years = grep {/\d{4}/} <"$home/*">;
-  #print join(', ', @years)."\n\n";
 
   foreach my $year(@years) {
     my @days = <"$year/*">;
@@ -43,29 +116,35 @@ sub all_files {
         }
       }
     }
-  return \@all;
+  return @all;
   }
 
 
-sub load_one_date_into_temp {
-  my ($y, $m, $d, $filename) = @_;
-  print "Loading $date into temp\n";
+sub copy_and_unzip_file_into_temp {
+  my $filename = shift;
+  my ($date, $y, $m, $d) = date_from_filename($filename);
 
+  print "copy_and_unzip_file_into_temp: Loading $filename into temp\n";
   # If the source file isn't already copied to the temp directory, do so.
-  unless (-e "$home/temp/$y-$m-$d.zip") {
-    unless ($filename) {$filename=lookup_filename($y, $m, $d);}
+  unless (-e "$home/temp/$date.zip") {
     if ($filename) {
-      `rm -r $home/temp`;
-      `cp $home/$y/$filename temp/$y-$m-$d.zip`;
+      if (-e "$home/temp") {`rm -r $home/temp/*`;}
+      else {mkdir "$home/temp";}
+      `cp $filename $home/temp/$date.zip`;
       }
-    else {die "Couldn't find a file for $y-$m-$d\n";}
+    else {die "Couldn't find a file for $date\n";}
     }
 
+  print "unzip $home/temp/$y-$m-$d.zip -d $home/temp\n";
+  `unzip $home/temp/$y-$m-$d.zip -d $home/temp`;
   # If the source file is not already unzipped, unzip it.
-  unless (-e "$home/temp/MASTER.txt") {
-    `unzip $home/temp/$y-$m-$d.zip -d $home/temp`;
-    }
+  my $master_filename;
+  if (-e "$home/temp/MASTER.txt") {rename "$home/temp/MASTER", "$home/temp/MASTER.txt";}
+  }
 
+
+sub get_field_names_from_current_file {
+ 
   # get the field names from the first row
   open my $f, '<', "$home/temp/MASTER.txt";;
   my $fields = <$f>;
@@ -108,8 +187,8 @@ sub fields {
            region => 'varchar(1)',
            county => 'varchar(3)',
            country => 'varchar(2)',
-           last_action_date => 'date',  # YYYY/MM/DD
-           cert_issue_date => 'date', # YYYY/MM/DD 
+           last_action_date => 'date',  # YYYYMMDD
+           cert_issue_date => 'date', # YYYYMMDD 
            certification => 'varchar(10)',  # this is the big chunk of data that contains other fields
            type_aircraft => 'varchar(1)', 
            type_engine => 'varchar(2)', 
@@ -140,6 +219,7 @@ sub create_table {
   $mysql->do("truncate MASTER"); # because of the "if not exists" clause we might not have created a new table.  In either case, ensure the table is empty.
   load_data(\@fields, $field_definitions);
   }
+
 
 sub load_data {
   my @fields = @{+shift};
