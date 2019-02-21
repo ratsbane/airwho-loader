@@ -2,7 +2,6 @@
 
 use DBI;
 use JSON;
-use Getopt::Long;
 
 my $mysql = DBI->connect('DBI:mysql:airwho;host=localhost', 'django', 'fjfjfj');
 
@@ -46,39 +45,71 @@ sub load_backwards {
     $first = $#all-1;
     print "The most recent file is $all[$first]\n\n";
     }
+
   # Go through each file from $first to the last one
   my $new = get_file($all[$first+1]);
+  my ($new_date) = date_from_filename($all[$first+1]);
   for (my $i=$first; $i>=0; $i--) {
     print "Comparing $i with $i+1: $all[$i] with $all[$i+1]\n";
     my $old = get_file($all[$i]);
-    compare_two_datasets($old, $new);
+    my ($old_date) = date_from_filename($all[$i]);
+    compare_two_datasets($old, $old_date, $new, $new_date);
     my $new=$old;
+    $new_date=$old_date;
     }
   }
 
-sub  trim { my $s = shift; $s =~ s/^\s+|\s+$//g; return $s };
+sub trim { my $s = shift; $s =~ s/^\s+|\s+$//g; return $s };
 
 sub compare_two_datasets {
   my @old = @{+shift};
+  my $old_date = shift;
   my @new = @{+shift};
-  # Convert $new into a hash
-  #print "\@old is ".to_json([@old[24,25]])."\n\n";
-  #print "\@new is ".to_json([@new[24,25]])."\n\n";
+  my $new_date = shift;
+
+  # Convert $new and $old into hashes
   # The serial number is in position 1 and mfg/model code is in position 2.  Use that as the hash key.
   # The "unique_id" field might be better but that field is not present in the earlier files; it was added later.
-  %new =  map { ($_->[2].'|'.$_->[1]) => [ $_->[0], @{$_}[3..20] ] } @new;
-  %old =  map { ($_->[2].'|'.$_->[1]) => [ $_->[0], @{$_}[3..20] ] } @old;
+  %new = map { ($_->[2].'|'.$_->[1]) => [ $_->[0], @{$_}[3..$#{$new[0]}] ] } @new;
+  %old = map { ($_->[2].'|'.$_->[1]) => [ $_->[0], @{$_}[3..$#{$old[0]}] ] } @old;
+
   # Iterate through $old, looking for anything not in $new - that will give us deleted records
   foreach $n(@new) {
-    unless ($old{ $n->[2].'|'.$n->[1]}) {print "Added in new: ".($n->[2].'|'.$n->[1])."\n\n";}
+    my $key = $n->[2].'|'.$n->[1];
+    unless ($old{$key}) {
+      print "Added in new: ".($key)."\n";
+      #insert_into_master_changes( $old_date, $new_date, 'A', $n );
+      }
     }
   # Iterate through $new, looking for anything not in $old - that will give us added records. Get the changed records also on this pass.
+  # the compare function is tricky, because at several times through the history of these files, fields have been added.
+  # fortunately, all of the added fields have been added to the end of the previous set of fields.  We don't want to consider as changed a file
+  # that just has fields added, so we will compare an array slice of old and new where the array slice is the length of the shorter of the two arrays
+  $slice_length = ($#{$new[0]} > $#{$old[0]}) ? $#{$old[0]} : $#{$new[0]};
   foreach $o(@old) {
-    unless ($new{ $o->[2].'|'.$o->[1]}) {print "Removed in new: ".($o->[2].'|'.$o->[1])."\n\n";}
-    unless ($new{ $o->[2].'|'.$o->[1]} ~~ $old{ $o->[2].'|'.$o->[1]}) {print "Changed: ".($o->[2].'|'.$o->[1])."\n\n";}
+    my $key = $o->[2].'|'.$o->[1];
+    unless ($new{$key}) {
+      print "Removed in new: $key\n";
+      #insert_into_master_changes($o);
+      }
+    unless (@{$new{$key}}[0..$slice_length] ~~ @{$old{$key}}[0..$slice_length]) {
+      print "Changed: $key\n";
+      #insert_into_master_changes($o);
+      }
     }
-  die;
   }
+
+
+sub insert_into_master_changes {
+  my $date_from = shift;
+  my $date_to = shift;
+  my $change_type = shift;  # A = Added; D = Deleted; C = Changed
+  my @record = @{+shift};
+
+  $query = 'insert into master_changes ( change_type, date_from, date_to, '.join(', ', @fields).') values (?,?,?,'.join(', ', ('?'x(scalar @fields)) ).')';
+  print "$date_from, $date_to, $change_type: $query\n";
+  }
+
 
 sub get_file {
   my $filename=shift;
@@ -88,7 +119,6 @@ sub get_file {
   read $f, my $buffer, -s $filename;
   my @rows = split("\r\n", $buffer);
   @rows = map { [ map {trim($_)} split /,\W*/, $_ ] } @rows;
-  print "Check this out: ".join("\n", @{$rows[56]})."\n\n";
   return \@rows;
   }
 
