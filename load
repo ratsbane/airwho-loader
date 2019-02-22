@@ -3,11 +3,53 @@
 use DBI;
 use JSON;
 
+
+# Fields (columns) present in the MASTER or MASTER.txt files
+# [ field name, sql data type ]
+$master_fields = [ [ 'n_number', 'varchar(5)' ],
+	           [ 'serial_number', 'varchar(30)'],
+                   [ 'mfr_mdl_code', 'varchar(7)'],
+                   [ 'eng_mfr_mdl', 'varchar(5)'],
+                   [ 'year_mfr', 'varchar(4)'],
+                   [ 'type_registrant', 'varchar(1)'],
+                   [ 'name', 'varchar(50)'],
+                   [ 'street', 'varchar(33)'],
+                   [ 'street2', 'varchar(33)'],
+                   [ 'city', 'varchar(18)'],
+                   [ 'state', 'varchar(2)'],
+                   [ 'zip_code', 'varchar(10)'],
+                   [ 'region', 'varchar(1)'],
+                   [ 'county', 'varchar(3)'],
+                   [ 'country', 'varchar(2)'],
+                   [ 'last_action_date', 'date'],    # YYYYMMDD
+                   [ 'cert_issue_date', 'date'],     # YYYYMMDD 
+                   [ 'certification', 'varchar(10)'],  # this is the big chunk of data that contains other fields
+                   [ 'type_aircraft', 'varchar(1)'], 
+                   [ 'type_engine', 'varchar(2)'], 
+                   [ 'status_code', 'varchar(2)'],
+                   [ 'mode_s_code', 'varchar(8)'],
+                   [ 'fract_owner', 'varchar(1)'],
+                   [ 'air_worth_date', 'date'],      # YYYYMMDD
+                   [ 'other_names_1', 'varchar(50)'],
+                   [ 'other_names_2', 'varchar(50)'],
+                   [ 'other_names_3', 'varchar(50)'],
+                   [ 'other_names_4', 'varchar(50)'],
+                   [ 'other_names_5', 'varchar(50)'],
+                   [ 'expiration_date', 'date'],      # YYYYMMDD  This field missing from the earliest files
+                   [ 'unique_id', 'varchar(8)'],
+                   [ 'kit_mfr', 'varchar(30)'],
+                   [ 'kit_model', 'varchar(20)'],
+                   [ 'mode_s_code_hex', 'varchar(10)']
+                 ];
+my @date_fields_in_master = map {$_->[0]} grep {$_->[1] eq 'date'} @{$master_fields};
+
 my $mysql = DBI->connect('DBI:mysql:airwho;host=localhost', 'django', 'fjfjfj');
 
 
 my $home = '/var/aircraft';
+
 my @all = all_files();
+
 
 if ($ARGV[0] eq 'backwards') {
   # Go through all of the files in reverse chron order and load the master_changes table
@@ -41,7 +83,6 @@ sub load_backwards {
     # find the index in @all of the file with date min_date
     for (my $i=0; $i<$#all and (${date_from_filename($all[$i])}[0] le $min_date); $i++) {$first=$i;}}
   else {
-    # start with the most recent file
     $first = $#all-1;
     print "The most recent file is $all[$first]\n\n";
     }
@@ -59,7 +100,9 @@ sub load_backwards {
     }
   }
 
+
 sub trim { my $s = shift; $s =~ s/^\s+|\s+$//g; return $s };
+
 
 sub compare_two_datasets {
   my @old = @{+shift};
@@ -73,43 +116,44 @@ sub compare_two_datasets {
   %new = map { ($_->[2].'|'.$_->[1]) => [ $_->[0], @{$_}[3..$#{$new[0]}] ] } @new;
   %old = map { ($_->[2].'|'.$_->[1]) => [ $_->[0], @{$_}[3..$#{$old[0]}] ] } @old;
 
-  # Iterate through $old, looking for anything not in $new - that will give us deleted records
+  # Using a prepared statement is much faster than not (but still the biggest bottlneck)
+  my @fields = map {$_->[0]} @{$master_fields};
+  my $insert_into_master_stmt = $mysql->prepare('insert into master_changes ( date_from, date_to, change_type,'.join(', ', @fields).') values (?,?,?'. (',?'x(scalar @fields) ).')');
+
+  my $field_count = scalar @{$master_fields};
+
+  # Iterate through $new, looking for anything not in $old - that will give us added records.
   foreach $n(@new) {
     my $key = $n->[2].'|'.$n->[1];
     unless ($old{$key}) {
-      print "Added in new: ".($key)."\n";
-      #insert_into_master_changes( $old_date, $new_date, 'A', $n );
+      print "Added in new: ".($key).".  Inserting with old_date $old_date and new_date $new_date and record ".(join(', ', map {"   $fields[$_]: $n->[$_]"}  0..$#{$n}))."\n";
+      $insert_into_master_stmt->execute( $old_date, $new_date, 'A', ( map {$master_fields->[$_]->[1] eq 'date' ? format_date($n->[$_]) : $n->[$_] } 0..($field_count-1) ) );
       }
     }
-  # Iterate through $new, looking for anything not in $old - that will give us added records. Get the changed records also on this pass.
+  # Iterate through $old, looking for anything not in $new - that will give us deleted records
+  # Get the changed records also on this pass.
   # the compare function is tricky, because at several times through the history of these files, fields have been added.
-  # fortunately, all of the added fields have been added to the end of the previous set of fields.  We don't want to consider as changed a file
-  # that just has fields added, so we will compare an array slice of old and new where the array slice is the length of the shorter of the two arrays
-  $slice_length = ($#{$new[0]} > $#{$old[0]}) ? $#{$old[0]} : $#{$new[0]};
+  # fortunately, all of the added fields have been added to the end of the previous set of fields.
+  # We do want to consider as changed a file that just has fields added
   foreach $o(@old) {
     my $key = $o->[2].'|'.$o->[1];
     unless ($new{$key}) {
-      print "Removed in new: $key\n";
-      #insert_into_master_changes($o);
+      print "Deleted from new: $key\n";
+      $insert_into_master_stmt->execute( $old_date, $new_date, 'D', ( map {$master_fields->[$_]->[1] eq 'date' ? format_date($o->[$_]) : $o->[$_] } 0..($field_count-1) ) );
       }
-    unless (@{$new{$key}}[0..$slice_length] ~~ @{$old{$key}}[0..$slice_length]) {
+    unless (@{$new{$key}} ~~ @{$old{$key}}) {
       print "Changed: $key\n";
-      #insert_into_master_changes($o);
+      $insert_into_master_stmt->execute( $old_date, $new_date, 'C', ( map {$master_fields->[$_]->[1] eq 'date' ? format_date($new[{$key}]->[$_]) : $new{$key}->[$_] } 0..($field_count-1) ) );
       }
     }
   }
 
-
-sub insert_into_master_changes {
-  my $date_from = shift;
-  my $date_to = shift;
-  my $change_type = shift;  # A = Added; D = Deleted; C = Changed
-  my @record = @{+shift};
-
-  $query = 'insert into master_changes ( change_type, date_from, date_to, '.join(', ', @fields).') values (?,?,?,'.join(', ', ('?'x(scalar @fields)) ).')';
-  print "$date_from, $date_to, $change_type: $query\n";
+# The FAA uses date format YYYYMMDD.  MySQL uses yyyy-mm-dd.  This accept a date in the FAA's format and returns it in MySQL's format
+sub format_date {
+  my $date = shift;
+  if (my ($y, $m, $d) = $date =~ /(\d{4})(\d{2})(\d{2})/g) {return "$y-$m-$d";}
+  return undef;
   }
-
 
 sub get_file {
   my $filename=shift;
@@ -118,7 +162,7 @@ sub get_file {
   open my $f, '<', "$home/temp/MASTER.txt";
   read $f, my $buffer, -s $filename;
   my @rows = split("\r\n", $buffer);
-  @rows = map { [ map {trim($_)} split /,\W*/, $_ ] } @rows;
+  @rows = map { [ map {trim($_)} split /\s*,\s*/, $_ ] } @rows;
   return \@rows;
   }
 
@@ -129,8 +173,8 @@ sub date_from_filename {
   return ("$y-$m-$d", $y, $m, $d);
   }
 
-sub all_files {
 
+sub all_files {
   my @all;  # The array we're going to push the list of unique files onto.
   my $prev_day_size = undef; 
   my @years = grep {/\d{4}/} <"$home/*">;
@@ -174,7 +218,6 @@ sub copy_and_unzip_file_into_temp {
 
 
 sub get_field_names_from_current_file {
- 
   # get the field names from the first row
   open my $f, '<', "$home/temp/MASTER.txt";;
   my $fields = <$f>;
@@ -201,53 +244,13 @@ sub lookup_filename {
   }
 
 
-sub fields {
-  return { n_number => 'varchar(5)',
-	   serial_number => 'varchar(30)',
-           mfr_mdl_code => 'varchar(7)',
-           eng_mfr_mdl => 'varchar(5)',
-           year_mfr => 'varchar(4)',
-           type_registrant => 'varchar(1)',
-           name => 'varchar(50)',
-           street => 'varchar(33)',
-           street2 => 'varchar(33)',
-           city => 'varchar(18)',
-           state => 'varchar(2)',
-           zip_code => 'varchar(10)',
-           region => 'varchar(1)',
-           county => 'varchar(3)',
-           country => 'varchar(2)',
-           last_action_date => 'date',  # YYYYMMDD
-           cert_issue_date => 'date', # YYYYMMDD 
-           certification => 'varchar(10)',  # this is the big chunk of data that contains other fields
-           type_aircraft => 'varchar(1)', 
-           type_engine => 'varchar(2)', 
-           status_code => 'varchar(2)',
-           mode_s_code => 'varchar(8)',
-           fract_owner => 'varchar(1)',
-           air_worth_date => 'date',
-           other_names_1 => 'varchar(50)',
-           other_names_2 => 'varchar(50)',
-           other_names_3 => 'varchar(50)',
-           other_names_4 => 'varchar(50)',
-           other_names_5 => 'varchar(50)',
-           expiration_date => 'date',
-           unique_id => 'varchar(8)',
-           kit_mfr => 'varchar(30)',
-           kit_model => 'varchar(20)',
-           mode_s_code_hex => 'varchar(10)'
-           };
-  }
-
 
 sub create_table {
-  my @fields = @{+shift};
-  my $field_definitions = fields();
-  my $query = "create table if not exists MASTER (".(join(', ', map { "$_ $field_definitions->{$_}" } @fields ) ).")";
+  my $query = "create table if not exists MASTER (".(join(', ', map { "$_->[0] $_->[1]" } @{$master_fields} ) ).")";
   print "\n\n$query\n\n";
   $mysql->do($query);
   $mysql->do("truncate MASTER"); # because of the "if not exists" clause we might not have created a new table.  In either case, ensure the table is empty.
-  load_data(\@fields, $field_definitions);
+  load_data( );
   }
 
 
@@ -268,3 +271,4 @@ sub load_data {
 
 # $mysql->do("create index address_city on $tablename(res_street_address, res_city_desc);");
  
+#!/usr/bin/perl
