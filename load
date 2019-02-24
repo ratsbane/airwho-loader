@@ -123,27 +123,27 @@ sub compare_two_datasets {
   my $field_count = scalar @{$master_fields};
 
   # Iterate through $new, looking for anything not in $old - that will give us added records.
+  # Get the changed records also on this pass because we already have the new record (which is what we want to store)
   foreach $n(@new) {
     my $key = $n->[2].'|'.$n->[1];
-    unless ($old{$key}) {
-      print "Added in new: ".($key).".  Inserting with old_date $old_date and new_date $new_date and record ".(join(', ', map {"   $fields[$_]: $n->[$_]"}  0..$#{$n}))."\n";
+    if ( ! $old{$key}) {
+      print "Added: $key\n"; #.".  Inserting with old_date $old_date and new_date $new_date and record ".(join(', ', map {"   $fields[$_]: $n->[$_]"}  0..$#{$n}))."\n";
       $insert_into_master_stmt->execute( $old_date, $new_date, 'A', ( map {$master_fields->[$_]->[1] eq 'date' ? format_date($n->[$_]) : $n->[$_] } 0..($field_count-1) ) );
+      }
+    elsif ( ! (@{$new{$key}} ~~ @{$old{$key}})) {
+      print "Changed: $key\n";
+      $insert_into_master_stmt->execute( $old_date, $new_date, 'C', ( map {$master_fields->[$_]->[1] eq 'date' ? format_date($n->[$_]) : $n->[$_] } 0..($field_count-1) ) );
       }
     }
   # Iterate through $old, looking for anything not in $new - that will give us deleted records
-  # Get the changed records also on this pass.
   # the compare function is tricky, because at several times through the history of these files, fields have been added.
   # fortunately, all of the added fields have been added to the end of the previous set of fields.
-  # We do want to consider as changed a file that just has fields added
+  # NB originally we did NOT want to consider as changed a file that just has fields added.  Now we do.
   foreach $o(@old) {
     my $key = $o->[2].'|'.$o->[1];
     unless ($new{$key}) {
-      print "Deleted from new: $key\n";
+      print "Deleted: $key\n";
       $insert_into_master_stmt->execute( $old_date, $new_date, 'D', ( map {$master_fields->[$_]->[1] eq 'date' ? format_date($o->[$_]) : $o->[$_] } 0..($field_count-1) ) );
-      }
-    unless (@{$new{$key}} ~~ @{$old{$key}}) {
-      print "Changed: $key\n";
-      $insert_into_master_stmt->execute( $old_date, $new_date, 'C', ( map {$master_fields->[$_]->[1] eq 'date' ? format_date($new[{$key}]->[$_]) : $new{$key}->[$_] } 0..($field_count-1) ) );
       }
     }
   }
@@ -267,8 +267,3 @@ sub load_data {
   }
 
 
-
-
-# $mysql->do("create index address_city on $tablename(res_street_address, res_city_desc);");
- 
-#!/usr/bin/perl
