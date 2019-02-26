@@ -45,33 +45,15 @@ my @date_fields_in_master = map {$_->[0]} grep {$_->[1] eq 'date'} @{$master_fie
 
 my $mysql = DBI->connect('DBI:mysql:airwho;host=localhost', 'django', 'fjfjfj');
 
+# TODO consider a threaded implementation here
+my $files = import_files->new();
 
-
-my @all = all_files();
-
-
-if ($ARGV[0] eq 'backwards') {
-  # Go through all of the files in reverse chron order and load the master_changes table
-  load_backwards();
-  }
-elsif (my ($y, $m, $d) = $ARGV[0]=~/(\d\d\d\d)-(\d\d)-(\d\d)/) {
-  print "Loading files for $y-$m-$d\n";
-  $filename=lookup_filename($y, $m, $d);
-  copy_and_unzip_file_into_temp($filename);
-  get_field_names_from_current_file();
-  }
-else {  # Load forward from the last file in the history table to the most recent file available
-  print join("\n", @{$all})."\n";
-  # Look up the most recent date in master_changes.from_date # We want to start with a date that's already in there in case previous load was interrupted - we don't know if that date was complete
-  ($max_date) = @{$mysql->selectcol_arrayref('select max(date_from) from master_changes')};
-
-  }
-
-
-die;
-
-
-sub load_backwards {
+# Load all of the files in the import_files directory structure starting with $max_date.
+# At this point we don't have record that the previous run was completed successfully, so we have to consider that the
+# changes stored for $max_date might not be complete.  We want inserting a/d/c records into master_changes to be idempotent
+# so it's safe to redo some or all of the changes for $max_date.  For efficiency, consider adding a table to record which 
+# files have been successfully imported.
+($max_date) = @{$mysql->selectcol_arrayref('select max(date_from) from master_changes')};
 
   my $first;  # index in @all of the first file we're going to load.  We will compare this file with the next-newest one.
 
@@ -102,8 +84,6 @@ sub load_backwards {
   }
 
 
-sub trim { my $s = shift; $s =~ s/^\s+|\s+$//g; return $s };
-
 
 sub compare_two_datasets {
   my @old = @{+shift};
@@ -128,11 +108,11 @@ sub compare_two_datasets {
   foreach $n(@new) {
     my $key = $n->[2].'|'.$n->[1];
     if ( ! $old{$key}) {
-      print "Added: $key\n"; #.".  Inserting with old_date $old_date and new_date $new_date and record ".(join(', ', map {"   $fields[$_]: $n->[$_]"}  0..$#{$n}))."\n";
+      if ($v) {print "Added: $key\n";}
       $insert_into_master_stmt->execute( $old_date, $new_date, 'A', ( map {$master_fields->[$_]->[1] eq 'date' ? format_date($n->[$_]) : $n->[$_] } 0..($field_count-1) ) );
       }
     elsif ( ! (@{$new{$key}} ~~ @{$old{$key}})) {
-      print "Changed: $key\n";
+      if ($v) {print "Changed: $key\n";}
       $insert_into_master_stmt->execute( $old_date, $new_date, 'C', ( map {$master_fields->[$_]->[1] eq 'date' ? format_date($n->[$_]) : $n->[$_] } 0..($field_count-1) ) );
       }
     }
@@ -143,11 +123,14 @@ sub compare_two_datasets {
   foreach $o(@old) {
     my $key = $o->[2].'|'.$o->[1];
     unless ($new{$key}) {
-      print "Deleted: $key\n";
+      if ($v) {print "Deleted: $key\n";}
       $insert_into_master_stmt->execute( $old_date, $new_date, 'D', ( map {$master_fields->[$_]->[1] eq 'date' ? format_date($o->[$_]) : $o->[$_] } 0..($field_count-1) ) );
       }
     }
   }
+
+
+sub trim { my $s = shift; $s =~ s/^\s+|\s+$//g; return $s };
 
 # The FAA uses date format YYYYMMDD.  MySQL uses yyyy-mm-dd.  This accept a date in the FAA's format and returns it in MySQL's format
 sub format_date {
@@ -167,12 +150,6 @@ sub get_file {
   return \@rows;
   }
 
-
-sub date_from_filename {
-  my $filename=shift;
-  my ($y, $m, $d) = $filename =~ /(\d{4})-(\d{2})-(\d{2})/;
-  return ("$y-$m-$d", $y, $m, $d);
-  }
 
 
 sub all_files {
@@ -194,28 +171,6 @@ sub all_files {
   return @all;
   }
 
-
-sub copy_and_unzip_file_into_temp {
-  my $filename = shift;
-  my ($date, $y, $m, $d) = date_from_filename($filename);
-
-  print "copy_and_unzip_file_into_temp: Loading $filename into temp\n";
-  # If the source file isn't already copied to the temp directory, do so.
-  unless (-e "$home/temp/$date.zip") {
-    if ($filename) {
-      if (-e "$home/temp") {`rm -r $home/temp/*`;}
-      else {mkdir "$home/temp";}
-      `cp $filename $home/temp/$date.zip`;
-      }
-    else {die "Couldn't find a file for $date\n";}
-    }
-
-  print "unzip $home/temp/$y-$m-$d.zip -d $home/temp\n";
-  `unzip $home/temp/$y-$m-$d.zip -d $home/temp`;
-  # If the source file is not already unzipped, unzip it.
-  my $master_filename;
-  if (-e "$home/temp/MASTER.txt") {rename "$home/temp/MASTER", "$home/temp/MASTER.txt";}
-  }
 
 
 sub get_field_names_from_current_file {
@@ -276,8 +231,9 @@ sub load_data {
 package import_files;
 
 my @all;
-
 my $home = '/var/aircraft';
+my $current_file_path;  
+my $current_file_id;  # subscript of this element in the @all array
 
 sub new {
   my $class=shift;
@@ -309,6 +265,34 @@ sub all_files {
   }
 
 
-my $current_file_path;  
-my $current_file_id;  # subscript of this element in the @all array
+sub copy_and_unzip_file_into_temp {
+  my $self = shift;
+  my $filename = shift;
+  my ($date, $y, $m, $d) = date_from_filename($filename);
+
+  print "copy_and_unzip_file_into_temp: Loading $filename into temp\n";
+  # If the source file isn't already copied to the temp directory, do so.
+  unless (-e "$home/temp/$date.zip") {
+    if ($filename) {
+      if (-e "$home/temp") {`rm -r $home/temp/*`;}
+      else {mkdir "$home/temp";}
+      `cp $filename $home/temp/$date.zip`;
+      }
+    else {die "Couldn't find a file for $date\n";}
+    }
+
+  print "unzip $home/temp/$y-$m-$d.zip -d $home/temp\n";
+  `unzip $home/temp/$y-$m-$d.zip -d $home/temp`;
+  # If the source file is not already unzipped, unzip it.
+  my $master_filename;
+  if (-e "$home/temp/MASTER.txt") {rename "$home/temp/MASTER", "$home/temp/MASTER.txt";}
+  }
+
+
+# static method - call on the package, not the instance.
+sub date_from_filename {
+  my $filename=shift;
+  my ($y, $m, $d) = $filename =~ /(\d{4})-(\d{2})-(\d{2})/;
+  return ("$y-$m-$d", $y, $m, $d);
+  }
 
