@@ -45,9 +45,6 @@ my @date_fields_in_master = map {$_->[0]} grep {$_->[1] eq 'date'} @{$master_fie
 
 my $mysql = DBI->connect('DBI:mysql:airwho;host=localhost', 'django', 'fjfjfj');
 
-# TODO consider a threaded implementation here
-my $files = import_files->new();
-
 # Load all of the files in the import_files directory structure starting with $max_date.
 # At this point we don't have record that the previous run was completed successfully, so we have to consider that the
 # changes stored for $max_date might not be complete.  We want inserting a/d/c records into master_changes to be idempotent
@@ -55,32 +52,13 @@ my $files = import_files->new();
 # files have been successfully imported.
 ($max_date) = @{$mysql->selectcol_arrayref('select max(date_from) from master_changes')};
 
-  my $first;  # index in @all of the first file we're going to load.  We will compare this file with the next-newest one.
+# instantiate the files list as all available import files on or after $max_date.  If max_date is undef, start with the first file.
+my $files = import_files->new($max_date);
 
-  # find out the most recent file represented in master_changes.  Starting with that file (because we can't be sure that the load of that file was successful)
-  # re-load the file (load should be idempotent) and then compare the previous file and load that until we get to the first file.
-  # Compare each of the fields with the previous file.  Either the fields must be the same or missing completely in the older file.  Otherwise, insert the row into master_history.
-  ($min_date) = @{$mysql->selectcol_arrayref('select min(date_from) from master_changes')};
-  print "min_date is $min_date\n\n";
-  if ($min_date) {
-    # find the index in @all of the file with date min_date
-    for (my $i=0; $i<$#all and (${date_from_filename($all[$i])}[0] le $min_date); $i++) {$first=$i;}}
-  else {
-    $first = $#all-1;
-    print "The most recent file is $all[$first]\n\n";
-    }
-
-  # Go through each file from $first to the last one
-  my $new = get_file($all[$first+1]);
-  my ($new_date) = date_from_filename($all[$first+1]);
-  for (my $i=$first; $i>=0; $i--) {
-    print "Comparing $i with $i+1: $all[$i] with $all[$i+1]\n";
-    my $old = get_file($all[$i]);
-    my ($old_date) = date_from_filename($all[$i]);
-    compare_two_datasets($old, $old_date, $new, $new_date);
-    my $new=$old;
-    $new_date=$old_date;
-    }
+my $o = $files->get_first();
+while ($n = $files->get_next()) {
+  compare_to_datasets($o, $n);
+  $o = $n;
   }
 
 
@@ -132,16 +110,60 @@ sub compare_two_datasets {
 
 sub trim { my $s = shift; $s =~ s/^\s+|\s+$//g; return $s };
 
-# The FAA uses date format YYYYMMDD.  MySQL uses yyyy-mm-dd.  This accept a date in the FAA's format and returns it in MySQL's format
-sub format_date {
-  my $date = shift;
-  if (my ($y, $m, $d) = $date =~ /(\d{4})(\d{2})(\d{2})/g) {return "$y-$m-$d";}
-  return undef;
+
+# This class represents the set of imported files that exists on disk, as well as an iterator over that set and
+# some utility functions to create and manage the data sets extracted from those files.
+# Although not currently implemented, this might be altered slightly to permit parallel loading of files through
+# multiple instances - though that would require provisioning for multiple temp directories with different names. 
+package import_files;
+
+my $home = '/var/aircraft';
+
+sub new {
+  my $class=shift;
+  my $min_date = shift;  # optional
+  my $self={ min_date => $min_date,
+             current_file_path => undef,
+             current_file_id => undef,
+	     all => all_files($min_date)    # reference to the list of files
+            };
+  bless $self, $class;
+  return $self;
   }
 
+
+# Return all file paths which are candidates for loading into history.  Pass in the first date that we could use or undef for all
+sub all_files {
+  my $self = shift;
+  my $min_date = shift;  # The minimum date that we will consider for inclusion in this list. Undef is ok; will return all.
+
+  my $prev_day_size = undef;
+  my @years = grep {/\d{4}/} <"$home/*">;
+
+  foreach my $year(@years) {
+    my @days = <"$year/*">;
+    foreach my $day(@days) {
+      if ( date_from_filename($day) ge $min_date) {  # returns yyyy-mm-dd.  Rather than use date object, lexical order is fine for this purpose
+      
+        # Many files are repeats of previous day, because the FAA hadn't updated the file when we downloaded it.
+        # This uses the file's size to exclude those duplicates.
+        # Also, 30mb seems like a reasonable estimate to exclude the bulk of the remaining problem files
+        my $s = -s $day;
+        if ($s != $prev_day_size and $s>30000000 {
+          $prev_day_size = $s;
+          push @all, $day;
+          }
+        }
+      }
+    }
+  $self->{'all'} = [@all];
+  }
+
+
 sub get_file {
+  my $self = shift;
   my $filename=shift;
-  copy_and_unzip_file_into_temp($filename);
+  if (copy_and_unzip_file_into_temp($filename)) {  # If there's a problem with the file and unzip returns error, don't try loading it. Return false.
   ($d)=date_from_filename($filename);
   open my $f, '<', "$home/temp/MASTER.txt";
   read $f, my $buffer, -s $filename;
@@ -151,126 +173,13 @@ sub get_file {
   }
 
 
-
-sub all_files {
-  my @all;  # The array we're going to push the list of unique files onto.
-  my $prev_day_size = undef; 
-  my @years = grep {/\d{4}/} <"$home/*">;
-
-  foreach my $year(@years) {
-    my @days = <"$year/*">;
-    foreach my $day(@days) {
-      # Many files are repeats of previous day, because the FAA hadn't updated the file when we downloaded it.  This uses the files size to exclude those duplicates
-      my $s = -s $day;
-      if ($s != $prev_day_size) {
-        $prev_day_size = $s;
-	push @all, $day;
-        }
-      }
-    }
-  return @all;
-  }
-
-
-
-sub get_field_names_from_current_file {
-  # get the field names from the first row
-  open my $f, '<', "$home/temp/MASTER.txt";;
-  my $fields = <$f>;
-  chomp $fields;
-  $fields =~ s/\W+$//;  # Removes comma and any other odd characters at the end of the line
-  $fields =~ s/^\W+//;  # Removes comma and any other odd characters at the front of the line
-
-  print $fields;
-  # Split the header into an array of field names, changing all of the dashes, spaces, and parentheses to underscores
-  # and then removing leading and trailing underscores from each field name
-  @fields = map { local $_=$_; s/^_|_$//g; lc $_} map { local $_=$_; s/[- ()]/_/g; $_ } split ',', $fields;
-  print join(', ', @fields)."\n";
-
-  create_table(\@fields);
-  }
-
-
-# Given a year, month, and day, return the filename for that date.  If it doesn't exist, return false.
-sub lookup_filename {
-  my ($y, $m, $d) = @_;
-  my ($filename) = grep {/$y-$m-$d/} <"$home/$y/*">;
-  #die "* * * * * the filename is $filename * * * * *\n";
-  return $filename;
-  }
-
-
-
-sub create_table {
-  my $query = "create table if not exists MASTER (".(join(', ', map { "$_->[0] $_->[1]" } @{$master_fields} ) ).")";
-  print "\n\n$query\n\n";
-  $mysql->do($query);
-  $mysql->do("truncate MASTER"); # because of the "if not exists" clause we might not have created a new table.  In either case, ensure the table is empty.
-  load_data( );
-  }
-
-
-sub load_data {
-  my @fields = @{+shift};
-  my $field_definitions = shift;
-  $query = "load data local infile '$home/temp/MASTER.txt' into table MASTER fields terminated by ',' enclosed by '\"' lines terminated by '\\r\\n' ignore 1 lines (".
-           join(',', map {"\@$_"} @fields).") set ".
-	   join(', ', map {"$_ = ".($field_definitions->{$_} eq 'date' ? "str_to_date(\@$_, '%Y%m%d%')" : "RTRIM(\@$_)") } @fields);
-  print "$query\n\n";
-  $mysql->do($query);
-  if ($mysql->errstr) {print "Error: ".$mysql->errstr."\n";}
-  print "Data loaded.\n";
-  }
-
-
-
-# This class represents the set of imported files that exists on disk, as well as an iterator over that set and
-# some utility functions to create and manage the data sets extracted from those files.
-# Although not currently implemented, this might be altered slightly to permit parallel loading of files through
-# multiple instances - though that would require provisioning for multiple temp directories with different names. 
-package import_files;
-
-my @all;
-my $home = '/var/aircraft';
-my $current_file_path;  
-my $current_file_id;  # subscript of this element in the @all array
-
-sub new {
-  my $class=shift;
-  my $self={};
-  bless $self, $class;
-  return $self;
-  }
-
-
-sub all_files {
-  my $self=shift;
-  my $prev_day_size = undef;
-  my @years = grep {/\d{4}/} <"$home/*">;
-
-  foreach my $year(@years) {
-    my @days = <"$year/*">;
-    foreach my $day(@days) {
-      # Many files are repeats of previous day, because the FAA hadn't updated the file when we downloaded it.
-      # This uses the file's size to exclude those duplicates.
-      # Also, 30mb seems like a reasonable estimate to exclude the bulk of the remaining problem files
-      my $s = -s $day;
-      if ($s != $prev_day_size and $s>30000000 {
-        $prev_day_size = $s;
-        push @all, $day;
-        }
-      }
-    }
-  return @all;
-  }
-
-
 sub copy_and_unzip_file_into_temp {
   my $self = shift;
   my $filename = shift;
   my ($date, $y, $m, $d) = date_from_filename($filename);
 
-  print "copy_and_unzip_file_into_temp: Loading $filename into temp\n";
+  if ($v) {print "copy_and_unzip_file_into_temp: Loading $filename into temp\n";}
+
   # If the source file isn't already copied to the temp directory, do so.
   unless (-e "$home/temp/$date.zip") {
     if ($filename) {
@@ -283,8 +192,6 @@ sub copy_and_unzip_file_into_temp {
 
   print "unzip $home/temp/$y-$m-$d.zip -d $home/temp\n";
   `unzip $home/temp/$y-$m-$d.zip -d $home/temp`;
-  # If the source file is not already unzipped, unzip it.
-  my $master_filename;
   if (-e "$home/temp/MASTER.txt") {rename "$home/temp/MASTER", "$home/temp/MASTER.txt";}
   }
 
