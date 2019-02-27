@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 
-use Test::Simple tests=>9;
+use Test::Simple tests=>10;
 
 use lib '.';
 use FileSet;
@@ -12,9 +12,9 @@ ok(defined $fs && ref $fs eq 'FileSet', 'new creates instance');
 
 ok($#{$fs->{all}}>100, 'all_files gets a list of files');
 
-ok($fs->{all}->[0] eq '/var/aircraft/2007/2007-05-23_23_45_20', 'all_files gets the first filename');
+ok($fs->{all}->[1] eq '/var/aircraft/2007/2007-05-23_23_45_20', 'all_files gets the first filename');
 
-ok($fs->{all}->[13] eq '/var/aircraft/2007/2007-09-10_08_27_16', 'all_files correctly skips the first defective file');
+ok($fs->{all}->[14] eq '/var/aircraft/2007/2007-09-10_08_27_16', 'all_files correctly skips the first defective file');
 
 my $r = $fs->_copy_and_unzip_file_into_temp('/var/aircraft/2007/2007-05-23_23_45_20');
 
@@ -22,28 +22,17 @@ ok( $r, 'copying and unzipping returned true for valid file');
 
 ok(-e '/var/aircraft/temp/2007-05-23.zip', 'unzip got the correct date');
 
-ok(-e '/var/aircraft/temp/MASTER.txt', 'MASTER.txt file is there');
+ok(-e '/var/aircraft/temp/MASTER.txt', "MASTER.txt file IS there when it should be");
 
 my $r = $fs->_copy_and_unzip_file_into_temp('/var/aircraft/2007/2007-09-03_10_00_02');
  
 ok( ! $r, 'copying and unzipping returned false for invalid file');
 
-ok( ! -e '/var/aircraft/temp/MASTER.txt', 'MASTER.txt file is not there');
+ok( ! -e '/var/aircraft/temp/MASTER.txt', "MASTER.txt file is NOT there when it shouldn't be");
 
-($x, $d) = $fs->_load_file('/var/aircraft/2007/2007-05-23_23_45_20');
+$fs->{'current_file_index'}=1;
+($data, $date) = $fs->_load_file();
 
-print "HEEEYYYY \$d is $d\n";
+ok( $date eq '2007-05-23', 'load_file returns the correct date');
 
-#(undef, $d) = $fs->get_first();
-#die "\n\nHEYYY \$d is $d\n";
-#ok( $d eq '', 'get_first returns the correct date');
-
-
-
-
-#(undef, $x) = $fs->get_first();
-#print "$x\n";
-
-
-#for (0..14) {print$fs->{all}->[$_]."\n";}
 

@@ -64,10 +64,8 @@ my $fileset = FileSet->new();
 
 my ($o, $o_date) = $fileset->get_one_before($maxdate); # If $maxdate represents the first one then get_one_before will
                                                        # return an empty array, which means that everything in $n will be added, which is what we want.
-print "\$o_date is $o_date\n";
 while (($n, $n_date) = $fileset->get_next()) {
-  print "comparing with new file, $n_date\n";
-  #compare_two_datasets($o, $o_date, $n, $n_date);
+  compare_two_datasets($o, $o_date, $n, $n_date);
   $o = $n;
   $o_date = $n_date;
   }
@@ -80,7 +78,7 @@ sub compare_two_datasets {
   my @new = @{+shift};
   my $new_date = shift;
 
-  if ($v) {print "Comparing $old_date with $new_date\n";}
+  if ($v) {print "Comparing $old_date ($#old rows) with $new_date ($#new rows)\n";}
 
   # Convert $new and $old into hashes
   # The serial number is in position 1 and mfg/model code is in position 2.  Use that as the hash key.
@@ -119,4 +117,18 @@ sub compare_two_datasets {
       }
     }
   }
+
+
+
+# FAA date format is YYYYMMDD.
+sub format_date {
+  my $date=shift;
+  my ($y, $m, $d) = $date =~ /(\d{4})(\d{2})(\d{2})/;
+  if ($y && $m && $d) {return "$y-$m-$d";}
+  else {return undef;}
+  }
+
+
+
+
 

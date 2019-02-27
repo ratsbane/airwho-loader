@@ -9,10 +9,9 @@ package FileSet;
 
 sub new {
   my $class=shift;
-  my $self={ min_date => undef,
-             current_file_path => undef,
-             current_file_id => undef,
-             home => '/var/aircraft'
+  my $self={ current_file_index => undef,
+             home => '/var/aircraft',
+             all => [[]]   # initialize the file list with a blank one at the start
      };
   bless $self, $class;
 
@@ -24,7 +23,6 @@ sub new {
 # Looks up  all file paths which are candidates for loading into history.  Pass in the first date that we could use or undef for all
 sub all_files {
   my $self = shift;
-  my $min_date = shift;  # The minimum date that we will consider for inclusion in this list. Undef is ok; will return all.
   my $prev_day_size = undef;
   my $home = $self->{'home'};
   if ($main::v) {print "In all_files with \$min_date=$min_date.  Looking for files in $home\n";}
@@ -40,49 +38,56 @@ sub all_files {
       my $s = -s $day;
       if ($s != $prev_day_size and $s>30000000) {
         $prev_day_size = $s;
-        push @all, $day;
+        push @{$self->{'all'}}, $day;
         }
       }
     }
-  $self->{'all'} = [@all];
   }
 
 
-# returns 1) a reference to the array-of-arrays that's the data from the first file in the list and 2) a string containing the date, e.g., 2019-02-26
-sub get_first {
+# Given a date, returns the file contents and name of the one before the date.
+# If there is not one before, return an empty array and string
+# Also sets the object's index to point to that file.
+sub get_one_before {
   my $self = shift;
-  $self->{'current_file_id'} = 0;
-  return $self->_load_file();
+  my $date = shift;
+  while ( $c < $#{$self->{'all'}} && (date_from_filename($self->{'all'}->[$c]) lt $date) ) { $self->{'current_file_index'}++; }
+  return $self->_load_file()
   }
+
 
 
 # iterates through the list of files.  returns data from file and date of file.  At the end of the list, returns nothing (false)
 sub get_next {
   my $self = shift;
-  if ($self->{'current_file_id'} < $#{$self->{'all'}}) {
-    $self->{'current_file_id'}++;
+  if ($self->{'current_file_index'} < $#{$self->{'all'}}) {
+    $self->{'current_file_index'}++;
     return $self->_load_file();   # returns an array of two things: ref to dataset and scalar date string
     }
   else {return undef;}
   }
 
 
-# uses current_file_id to retrieve contents of array.  Returns ref to array of arrays of contents and scalar date string
+# uses current_file_index to retrieve contents of array.  Returns ref to array of arrays of contents and scalar date string
 sub _load_file {
   my $self = shift;
-  my @rows;
-  my $filepath = $self->{all}->['current_file_id'];
-  my $home = $self->{'home'};
-  my ($date) = date_from_filename($filepath);
-  print STDOUT "in _load_file with \$filepath is $filepath and \$date is $date\n";
-  if ($self->_copy_and_unzip_file_into_temp($filepath)) {  # If there's a problem with the file and unzip returns error, don't try loading it. Return false.
-    open my $f, '<', "$home/temp/MASTER.txt";
-    read $f, my $buffer, -s $filepath;
-    my @rows = split("\r\n", $buffer);
-    @rows = map { [ map {trim($_)} split /\s*,\s*/, $_ ] } @rows;
-    close $f;
+ 
+  my @rows = ();
+  my $date;
+  my $filepath;
+  if ($self->{'current_file_index'} > 0) {
+    $filepath = $self->{all}->[$self->{'current_file_index'}];
+    print "_load_file: filepath is $filepath\n";
+    $date = date_from_filename($filepath);
+    if ($self->_copy_and_unzip_file_into_temp($filepath)) {  # If there's a problem with the file and unzip returns error, don't try loading it. Return false.
+      open my $f, '<', "$self->{'home'}/temp/MASTER.txt";
+      read $f, my $buffer, -s $filepath;
+      @rows = map { [ map {trim($_)} split /\s*,\s*/, $_ ] } split("\r\n", $buffer);
+      close $f;
+      }
     }
-  return ( \@rows, $date );
+    print "_load_file: returning $#rows rows for $date in $filepath\n";
+    return ( \@rows, $date );
   }
   
   
@@ -90,7 +95,7 @@ sub _load_file {
 sub _copy_and_unzip_file_into_temp {
   my $self = shift;
   my $filename = shift;
-  my ($date) = date_from_filename($filename);
+  my $date = date_from_filename($filename);
   my $home = $self->{'home'};
 
   if ($main::v) {print "copy_and_unzip_file_into_temp: Loading $filename into temp\n";}
@@ -111,11 +116,12 @@ sub _copy_and_unzip_file_into_temp {
 sub trim { my $s = shift; $s =~ s/^\s+|\s+$//g; return $s };
  
   
-# static method - call on the package, not the instance.
+# static method
 sub date_from_filename {
   my $filename=shift;
   my ($y, $m, $d) = $filename =~ /(\d{4})-(\d{2})-(\d{2})/;
-  return ("$y-$m-$d", $y, $m, $d);
+  if ($y && $m && $d) {return "$y-$m-$d";}
+  else {return undef;}
   }
 
 1;
