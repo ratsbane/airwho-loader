@@ -77,7 +77,6 @@ sub _load_file {
   my $filepath;
   if ($self->{'current_file_index'} > 0) {
     $filepath = $self->{all}->[$self->{'current_file_index'}];
-    print "_load_file: filepath is $filepath\n";
     $date = date_from_filename($filepath);
     if ($self->_copy_and_unzip_file_into_temp($filepath)) {  # If there's a problem with the file and unzip returns error, don't try loading it. Return false.
       open my $f, '<', "$self->{'home'}/temp/MASTER.txt";
@@ -86,7 +85,6 @@ sub _load_file {
       close $f;
       }
     }
-    print "_load_file: returning $#rows rows for $date in $filepath\n";
     return ( \@rows, $date );
   }
   

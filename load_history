@@ -5,14 +5,15 @@ use JSON::Parse 'json_file_to_perl';
 
 use lib '.';
 use FileSet;
+use strict;
+use warnings;
 
-
-$v=1;  # verbose
+my $v=1;  # verbose
 
 
 # Fields (columns) present in the MASTER or MASTER.txt files
 # [ field name, sql data type ]
-$master_fields = [ [ 'n_number', 'varchar(5)' ],
+my $master_fields = [ [ 'n_number', 'varchar(5)' ],
 	           [ 'serial_number', 'varchar(30)'],
                    [ 'mfr_mdl_code', 'varchar(7)'],
                    [ 'eng_mfr_mdl', 'varchar(5)'],
@@ -57,14 +58,14 @@ my $mysql = DBI->connect('DBI:mysql:airwho;host=localhost', $config->{'username'
 # changes stored for $max_date might not be complete.  We want inserting a/d/c records into master_changes to be idempotent
 # so it's safe to redo some or all of the changes for $max_date.  For efficiency, consider adding a table to record which 
 # files have been successfully imported.
-($max_date) = @{$mysql->selectcol_arrayref('select max(date_from) from master_changes')};
+my ($max_date) = @{$mysql->selectcol_arrayref('select max(date_from) from master_changes')};
 
 # instantiate the files list as all available import files
 my $fileset = FileSet->new();
 
-my ($o, $o_date) = $fileset->get_one_before($maxdate); # If $maxdate represents the first one then get_one_before will
+my ($o, $o_date) = $fileset->get_one_before($max_date); # If $maxdate represents the first one then get_one_before will
                                                        # return an empty array, which means that everything in $n will be added, which is what we want.
-while (($n, $n_date) = $fileset->get_next()) {
+while (my ($n, $n_date) = $fileset->get_next()) {
   compare_two_datasets($o, $o_date, $n, $n_date);
   $o = $n;
   $o_date = $n_date;
@@ -78,13 +79,13 @@ sub compare_two_datasets {
   my @new = @{+shift};
   my $new_date = shift;
 
-  if ($v) {print "Comparing $old_date ($#old rows) with $new_date ($#new rows)\n";}
+  if ($v>1) {print "Comparing $old_date ($#old rows) with $new_date ($#new rows)\n";}
 
   # Convert $new and $old into hashes
   # The serial number is in position 1 and mfg/model code is in position 2.  Use that as the hash key.
   # The "unique_id" field might be better but that field is not present in the earlier files; it was added later.
-  %new = map { ($_->[2].'|'.$_->[1]) => [ $_->[0], @{$_}[3..$#{$new[0]}] ] } @new;
-  %old = map { ($_->[2].'|'.$_->[1]) => [ $_->[0], @{$_}[3..$#{$old[0]}] ] } @old;
+  my %new = map { ($_->[2].'|'.$_->[1]) => [ $_->[0], @{$_}[3..$#{$new[0]}] ] } @new;
+  my %old = map { ($_->[2].'|'.$_->[1]) => [ $_->[0], @{$_}[3..$#{$old[0]}] ] } @old;
 
   # Using a prepared statement is much faster than not (but still the biggest bottlneck)
   my @fields = map {$_->[0]} @{$master_fields};
@@ -94,10 +95,10 @@ sub compare_two_datasets {
 
   # Iterate through $new, looking for anything not in $old - that will give us added records.
   # Get the changed records also on this pass because we already have the new record (which is what we want to store)
-  foreach $n(@new) {
+  foreach my $n(@new) {
     my $key = $n->[2].'|'.$n->[1];
     if ( ! $old{$key}) {
-      if ($v) {print "Added: $key\n";}
+      if ($v>1) {print "Added: $key\n";}
       $insert_into_master_stmt->execute( $old_date, $new_date, 'A', ( map {$master_fields->[$_]->[1] eq 'date' ? format_date($n->[$_]) : $n->[$_] } 0..($field_count-1) ) );
       }
     elsif ( ! (@{$new{$key}} ~~ @{$old{$key}})) {
@@ -112,7 +113,7 @@ sub compare_two_datasets {
   foreach $o(@old) {
     my $key = $o->[2].'|'.$o->[1];
     unless ($new{$key}) {
-      if ($v) {print "Deleted: $key\n";}
+      if ($v>1) {print "Deleted: $key\n";}
       $insert_into_master_stmt->execute( $old_date, $new_date, 'D', ( map {$master_fields->[$_]->[1] eq 'date' ? format_date($o->[$_]) : $o->[$_] } 0..($field_count-1) ) );
       }
     }
