@@ -58,10 +58,9 @@ my $mysql = DBI->connect('DBI:mysql:airwho;host=localhost', $config->{'username'
 # so it's safe to redo some or all of the changes for $max_date.  For efficiency, consider adding a table to record which 
 # files have been successfully imported.
 ($max_date) = @{$mysql->selectcol_arrayref('select max(date_from) from master_changes')};
-# instantiate the files list as all available import files on or after $max_date.  If max_date is undef, start with the first file.
-my $fileset = FileSet->new($max_date);
-print "\$max_date is $max_date\n";
-#die "all files: ".join("\n", @{$files->{'all'}})."\n";
+
+# instantiate the files list as all available import files
+my $fileset = FileSet->new();
 
 my ($o, $o_date) = $fileset->get_one_before($maxdate); # If $maxdate represents the first one then get_one_before will
                                                        # return an empty array, which means that everything in $n will be added, which is what we want.

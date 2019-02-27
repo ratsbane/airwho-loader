@@ -9,8 +9,7 @@ package FileSet;
 
 sub new {
   my $class=shift;
-  my $min_date = shift;  # optional
-  my $self={ min_date => $min_date,
+  my $self={ min_date => undef,
              current_file_path => undef,
              current_file_id => undef,
              home => '/var/aircraft'
@@ -34,17 +33,14 @@ sub all_files {
   foreach my $year(@years) {
     my @days = <"$year/*">;
     foreach my $day(@days) {
-      my @date = date_from_filename($day);
-      if ( $date[0] ge $min_date) {  # returns yyyy-mm-dd.  Rather than use date object, lexical order is fine for this purpose
       
-        # Many files are repeats of previous day, because the FAA hadn't updated the file when we downloaded it.
-        # This uses the file's size to exclude those duplicates.
-        # Also, 30mb seems like a reasonable estimate to exclude the bulk of the remaining problem files
-        my $s = -s $day;
-        if ($s != $prev_day_size and $s>30000000) {
-          $prev_day_size = $s;
-          push @all, $day;
-          }
+      # Many files are repeats of previous day, because the FAA hadn't updated the file when we downloaded it.
+      # This uses the file's size to exclude those duplicates.
+      # Also, 30mb seems like a reasonable estimate to exclude the bulk of the remaining problem files
+      my $s = -s $day;
+      if ($s != $prev_day_size and $s>30000000) {
+        $prev_day_size = $s;
+        push @all, $day;
         }
       }
     }
