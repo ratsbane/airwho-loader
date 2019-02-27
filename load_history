@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use DBI;
-use JSON;
+use JSON::Parse 'json_file_to_perl';
 
 use lib '.';
 use FileSet;
@@ -49,7 +49,8 @@ $master_fields = [ [ 'n_number', 'varchar(5)' ],
                  ];
 my @date_fields_in_master = map {$_->[0]} grep {$_->[1] eq 'date'} @{$master_fields};
 
-my $mysql = DBI->connect('DBI:mysql:airwho;host=localhost', 'django', 'fjfjfj');
+my $config = json_file_to_perl ('config.json');
+my $mysql = DBI->connect('DBI:mysql:airwho;host=localhost', $config->{'username'}, $config->{'password'});
 
 # Load all of the files in the import_files directory structure starting with $max_date.
 # At this point we don't have record that the previous run was completed successfully, so we have to consider that the
@@ -58,15 +59,16 @@ my $mysql = DBI->connect('DBI:mysql:airwho;host=localhost', 'django', 'fjfjfj');
 # files have been successfully imported.
 ($max_date) = @{$mysql->selectcol_arrayref('select max(date_from) from master_changes')};
 # instantiate the files list as all available import files on or after $max_date.  If max_date is undef, start with the first file.
-my $files = FileSet->new($max_date);
+my $fileset = FileSet->new($max_date);
 print "\$max_date is $max_date\n";
 #die "all files: ".join("\n", @{$files->{'all'}})."\n";
 
-my ($o, $o_date) = $files->get_first();
+my ($o, $o_date) = $fileset->get_one_before($maxdate); # If $maxdate represents the first one then get_one_before will
+                                                       # return an empty array, which means that everything in $n will be added, which is what we want.
 print "\$o_date is $o_date\n";
-while (($n, $n_date) = $files->get_next()) {
+while (($n, $n_date) = $fileset->get_next()) {
   print "comparing with new file, $n_date\n";
-  compare_two_datasets($o, $n);
+  #compare_two_datasets($o, $o_date, $n, $n_date);
   $o = $n;
   $o_date = $n_date;
   }

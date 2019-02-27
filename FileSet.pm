@@ -74,17 +74,17 @@ sub get_next {
 # uses current_file_id to retrieve contents of array.  Returns ref to array of arrays of contents and scalar date string
 sub _load_file {
   my $self = shift;
-  my $filename=shift;
   my @rows;
   my $filepath = $self->{all}->['current_file_id'];
   my $home = $self->{'home'};
-  print "\$filepath is $filepath\n";
-  if (_copy_and_unzip_file_into_temp($filepath)) {  # If there's a problem with the file and unzip returns error, don't try loading it. Return false.
-    my ($date) = date_from_filename($filename);
+  my ($date) = date_from_filename($filepath);
+  print STDOUT "in _load_file with \$filepath is $filepath and \$date is $date\n";
+  if ($self->_copy_and_unzip_file_into_temp($filepath)) {  # If there's a problem with the file and unzip returns error, don't try loading it. Return false.
     open my $f, '<', "$home/temp/MASTER.txt";
     read $f, my $buffer, -s $filepath;
     my @rows = split("\r\n", $buffer);
     @rows = map { [ map {trim($_)} split /\s*,\s*/, $_ ] } @rows;
+    close $f;
     }
   return ( \@rows, $date );
   }

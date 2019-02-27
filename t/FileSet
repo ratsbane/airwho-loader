@@ -4,6 +4,7 @@ use Test::Simple tests=>9;
 
 use lib '.';
 use FileSet;
+$| = 1;  # autoflush print
 
 my $fs = FileSet->new();
 
@@ -15,7 +16,7 @@ ok($fs->{all}->[0] eq '/var/aircraft/2007/2007-05-23_23_45_20', 'all_files gets 
 
 ok($fs->{all}->[13] eq '/var/aircraft/2007/2007-09-10_08_27_16', 'all_files correctly skips the first defective file');
 
-my $r = $fs->copy_and_unzip_file_into_temp('/var/aircraft/2007/2007-05-23_23_45_20');
+my $r = $fs->_copy_and_unzip_file_into_temp('/var/aircraft/2007/2007-05-23_23_45_20');
 
 ok( $r, 'copying and unzipping returned true for valid file');
 
@@ -23,13 +24,15 @@ ok(-e '/var/aircraft/temp/2007-05-23.zip', 'unzip got the correct date');
 
 ok(-e '/var/aircraft/temp/MASTER.txt', 'MASTER.txt file is there');
 
-my $r = $fs->copy_and_unzip_file_into_temp('/var/aircraft/2007/2007-09-03_10_00_02');
+my $r = $fs->_copy_and_unzip_file_into_temp('/var/aircraft/2007/2007-09-03_10_00_02');
  
 ok( ! $r, 'copying and unzipping returned false for invalid file');
 
 ok( ! -e '/var/aircraft/temp/MASTER.txt', 'MASTER.txt file is not there');
 
+($x, $d) = $fs->_load_file('/var/aircraft/2007/2007-05-23_23_45_20');
 
+print "HEEEYYYY \$d is $d\n";
 
 #(undef, $d) = $fs->get_first();
 #die "\n\nHEYYY \$d is $d\n";
