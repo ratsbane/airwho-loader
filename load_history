@@ -3,6 +3,12 @@
 use DBI;
 use JSON;
 
+use lib '.';
+use FileSet;
+
+
+$v=1;  # verbose
+
 
 # Fields (columns) present in the MASTER or MASTER.txt files
 # [ field name, sql data type ]
@@ -51,14 +57,18 @@ my $mysql = DBI->connect('DBI:mysql:airwho;host=localhost', 'django', 'fjfjfj');
 # so it's safe to redo some or all of the changes for $max_date.  For efficiency, consider adding a table to record which 
 # files have been successfully imported.
 ($max_date) = @{$mysql->selectcol_arrayref('select max(date_from) from master_changes')};
-
 # instantiate the files list as all available import files on or after $max_date.  If max_date is undef, start with the first file.
-my $files = import_files->new($max_date);
+my $files = FileSet->new($max_date);
+print "\$max_date is $max_date\n";
+#die "all files: ".join("\n", @{$files->{'all'}})."\n";
 
-my $o = $files->get_first();
-while ($n = $files->get_next()) {
-  compare_to_datasets($o, $n);
+my ($o, $o_date) = $files->get_first();
+print "\$o_date is $o_date\n";
+while (($n, $n_date) = $files->get_next()) {
+  print "comparing with new file, $n_date\n";
+  compare_two_datasets($o, $n);
   $o = $n;
+  $o_date = $n_date;
   }
 
 
@@ -68,6 +78,8 @@ sub compare_two_datasets {
   my $old_date = shift;
   my @new = @{+shift};
   my $new_date = shift;
+
+  if ($v) {print "Comparing $old_date with $new_date\n";}
 
   # Convert $new and $old into hashes
   # The serial number is in position 1 and mfg/model code is in position 2.  Use that as the hash key.
@@ -105,101 +117,5 @@ sub compare_two_datasets {
       $insert_into_master_stmt->execute( $old_date, $new_date, 'D', ( map {$master_fields->[$_]->[1] eq 'date' ? format_date($o->[$_]) : $o->[$_] } 0..($field_count-1) ) );
       }
     }
-  }
-
-
-sub trim { my $s = shift; $s =~ s/^\s+|\s+$//g; return $s };
-
-
-# This class represents the set of imported files that exists on disk, as well as an iterator over that set and
-# some utility functions to create and manage the data sets extracted from those files.
-# Although not currently implemented, this might be altered slightly to permit parallel loading of files through
-# multiple instances - though that would require provisioning for multiple temp directories with different names. 
-package import_files;
-
-my $home = '/var/aircraft';
-
-sub new {
-  my $class=shift;
-  my $min_date = shift;  # optional
-  my $self={ min_date => $min_date,
-             current_file_path => undef,
-             current_file_id => undef,
-	     all => all_files($min_date)    # reference to the list of files
-            };
-  bless $self, $class;
-  return $self;
-  }
-
-
-# Return all file paths which are candidates for loading into history.  Pass in the first date that we could use or undef for all
-sub all_files {
-  my $self = shift;
-  my $min_date = shift;  # The minimum date that we will consider for inclusion in this list. Undef is ok; will return all.
-
-  my $prev_day_size = undef;
-  my @years = grep {/\d{4}/} <"$home/*">;
-
-  foreach my $year(@years) {
-    my @days = <"$year/*">;
-    foreach my $day(@days) {
-      if ( date_from_filename($day) ge $min_date) {  # returns yyyy-mm-dd.  Rather than use date object, lexical order is fine for this purpose
-      
-        # Many files are repeats of previous day, because the FAA hadn't updated the file when we downloaded it.
-        # This uses the file's size to exclude those duplicates.
-        # Also, 30mb seems like a reasonable estimate to exclude the bulk of the remaining problem files
-        my $s = -s $day;
-        if ($s != $prev_day_size and $s>30000000 {
-          $prev_day_size = $s;
-          push @all, $day;
-          }
-        }
-      }
-    }
-  $self->{'all'} = [@all];
-  }
-
-
-sub get_file {
-  my $self = shift;
-  my $filename=shift;
-  if (copy_and_unzip_file_into_temp($filename)) {  # If there's a problem with the file and unzip returns error, don't try loading it. Return false.
-  ($d)=date_from_filename($filename);
-  open my $f, '<', "$home/temp/MASTER.txt";
-  read $f, my $buffer, -s $filename;
-  my @rows = split("\r\n", $buffer);
-  @rows = map { [ map {trim($_)} split /\s*,\s*/, $_ ] } @rows;
-  return \@rows;
-  }
-
-
-sub copy_and_unzip_file_into_temp {
-  my $self = shift;
-  my $filename = shift;
-  my ($date, $y, $m, $d) = date_from_filename($filename);
-
-  if ($v) {print "copy_and_unzip_file_into_temp: Loading $filename into temp\n";}
-
-  # If the source file isn't already copied to the temp directory, do so.
-  unless (-e "$home/temp/$date.zip") {
-    if ($filename) {
-      if (-e "$home/temp") {`rm -r $home/temp/*`;}
-      else {mkdir "$home/temp";}
-      `cp $filename $home/temp/$date.zip`;
-      }
-    else {die "Couldn't find a file for $date\n";}
-    }
-
-  print "unzip $home/temp/$y-$m-$d.zip -d $home/temp\n";
-  `unzip $home/temp/$y-$m-$d.zip -d $home/temp`;
-  if (-e "$home/temp/MASTER.txt") {rename "$home/temp/MASTER", "$home/temp/MASTER.txt";}
-  }
-
-
-# static method - call on the package, not the instance.
-sub date_from_filename {
-  my $filename=shift;
-  my ($y, $m, $d) = $filename =~ /(\d{4})-(\d{2})-(\d{2})/;
-  return ("$y-$m-$d", $y, $m, $d);
   }
 
