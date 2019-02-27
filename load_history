@@ -123,7 +123,7 @@ sub compare_two_datasets {
 
 # FAA date format is YYYYMMDD.
 sub format_date {
-  my $date=shift;
+  my $date=shift || '';
   my ($y, $m, $d) = $date =~ /(\d{4})(\d{2})(\d{2})/;
   if ($y && $m && $d) {return "$y-$m-$d";}
   else {return undef;}
