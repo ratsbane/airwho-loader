@@ -93,16 +93,20 @@ sub compare_two_datasets {
 
   my $field_count = scalar @{$master_fields};
 
+  my ($changed, $added, $deleted)=(0,0,0);
+
   # Iterate through $new, looking for anything not in $old - that will give us added records.
   # Get the changed records also on this pass because we already have the new record (which is what we want to store)
   foreach my $n(@new) {
     my $key = $n->[2].'|'.$n->[1];
     if ( ! $old{$key}) {
       if ($v>1) {print "Added: $key\n";}
+      $added++;
       $insert_into_master_stmt->execute( $old_date, $new_date, 'A', ( map {$master_fields->[$_]->[1] eq 'date' ? format_date($n->[$_]) : $n->[$_] } 0..($field_count-1) ) );
       }
     elsif ( ! (@{$new{$key}} ~~ @{$old{$key}})) {
-      if ($v) {print "Changed: $key\n";}
+      if ($v>1) {print "Changed: $key\n";}
+      $changed++;
       $insert_into_master_stmt->execute( $old_date, $new_date, 'C', ( map {$master_fields->[$_]->[1] eq 'date' ? format_date($n->[$_]) : $n->[$_] } 0..($field_count-1) ) );
       }
     }
@@ -114,9 +118,11 @@ sub compare_two_datasets {
     my $key = $o->[2].'|'.$o->[1];
     unless ($new{$key}) {
       if ($v>1) {print "Deleted: $key\n";}
+      $deleted++;
       $insert_into_master_stmt->execute( $old_date, $new_date, 'D', ( map {$master_fields->[$_]->[1] eq 'date' ? format_date($o->[$_]) : $o->[$_] } 0..($field_count-1) ) );
       }
     }
+  if ($v) {print "Changed: $changed; Added: $added; Deleted: $deleted\n";}
   }
 
 
