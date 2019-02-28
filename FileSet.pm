@@ -80,7 +80,7 @@ sub _load_file {
     $date = date_from_filename($filepath);
     if ($self->_copy_and_unzip_file_into_temp($filepath)) {  # If there's a problem with the file and unzip returns error, don't try loading it. Return false.
       open my $f, '<', "$self->{'home'}/temp/MASTER.txt";
-      read $f, my $buffer, -s $filepath;
+      read $f, my $buffer, -s "$self->{'home'}/temp/MASTER.txt";
       @rows = map { [ map {trim($_)} split /\s*,\s*/, $_ ] } split("\r\n", $buffer);
       close $f;
       }
