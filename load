@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use DBI;
-use JSON;
+use JSON::Parse 'json_file_to_perl';
 
 
 # Fields (columns) present in the MASTER or MASTER.txt files
@@ -43,7 +43,9 @@ $master_fields = [ [ 'n_number', 'varchar(5)' ],
                  ];
 my @date_fields_in_master = map {$_->[0]} grep {$_->[1] eq 'date'} @{$master_fields};
 
-my $mysql = DBI->connect('DBI:mysql:airwho;host=localhost', 'django', 'fjfjfj');
+my $config = json_file_to_perl ('config.json');
+my $mysql = DBI->connect('DBI:mysql:airwho;host=localhost', $config->{'username'}, $config->{'password'});
+
 
 
 my $home = '/var/aircraft';
