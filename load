@@ -3,56 +3,56 @@
 use DBI;
 use JSON::Parse 'json_file_to_perl';
 
+my $v=2;  # verbosity level
 
-# Fields (columns) present in the MASTER or MASTER.txt files
-# [ field name, sql data type ]
-$master_fields = [ [ 'n_number', 'varchar(5)' ],
-	           [ 'serial_number', 'varchar(30)'],
-                   [ 'mfr_mdl_code', 'varchar(7)'],
-                   [ 'eng_mfr_mdl', 'varchar(5)'],
-                   [ 'year_mfr', 'varchar(4)'],
-                   [ 'type_registrant', 'varchar(1)'],
-                   [ 'name', 'varchar(50)'],
-                   [ 'street', 'varchar(33)'],
-                   [ 'street2', 'varchar(33)'],
-                   [ 'city', 'varchar(18)'],
-                   [ 'state', 'varchar(2)'],
-                   [ 'zip_code', 'varchar(10)'],
-                   [ 'region', 'varchar(1)'],
-                   [ 'county', 'varchar(3)'],
-                   [ 'country', 'varchar(2)'],
-                   [ 'last_action_date', 'date'],    # YYYYMMDD
-                   [ 'cert_issue_date', 'date'],     # YYYYMMDD 
-                   [ 'certification', 'varchar(10)'],  # this is the big chunk of data that contains other fields
-                   [ 'type_aircraft', 'varchar(1)'], 
-                   [ 'type_engine', 'varchar(2)'], 
-                   [ 'status_code', 'varchar(2)'],
-                   [ 'mode_s_code', 'varchar(8)'],
-                   [ 'fract_owner', 'varchar(1)'],
-                   [ 'air_worth_date', 'date'],      # YYYYMMDD
-                   [ 'other_names_1', 'varchar(50)'],
-                   [ 'other_names_2', 'varchar(50)'],
-                   [ 'other_names_3', 'varchar(50)'],
-                   [ 'other_names_4', 'varchar(50)'],
-                   [ 'other_names_5', 'varchar(50)'],
-                   [ 'expiration_date', 'date'],      # YYYYMMDD  This field missing from the earliest files
-                   [ 'unique_id', 'varchar(8)'],
-                   [ 'kit_mfr', 'varchar(30)'],
-                   [ 'kit_model', 'varchar(20)'],
-                   [ 'mode_s_code_hex', 'varchar(10)']
-                 ];
-my @date_fields_in_master = map {$_->[0]} grep {$_->[1] eq 'date'} @{$master_fields};
+my $date = $ARGV[0];
 
-my $config = json_file_to_perl ('config.json');
+my ($path_to_this) = $0 =~ /^(.*\/)\w+$/;
+unless (($y, $m, $d) = $date =~ /(\d{4})\W(\d{2})\W(\d{2})/) {die "\nUsage: $path_to_this"."load yyyy/mm/dd\n\n";}
+
+my $tables = { "master" => { "fields" => json_file_to_perl($path_to_this.'master.json'),
+                             "filename" => "MASTER.txt" },
+
+	     "aircraft" => { "fields" => json_file_to_perl($path_to_this.'aircraft.json'),
+                             "filename" => "ACFTREF.txt" },
+
+    	     "engines" => { "fields" => json_file_to_perl($path_to_this.'engines.json'),
+                             "filename" => "ENGINE.txt" }
+          };
+
+
+
+
+my $config = json_file_to_perl ($path_to_this.'config.json');
 my $mysql = DBI->connect('DBI:mysql:airwho;host=localhost', $config->{'username'}, $config->{'password'});
-
-
 
 my $home = '/var/aircraft';
 
+my $filename = <"$home/$y/$y-$m-$d*">;
+unless ($filename) {die "A file for that date, $y-$m-$d, doesn't exist.\n\n";}
+else {print "\nFound $filename\n\n";}
+
+copy_and_unzip_file_into_temp($filename, $y, $m, $d);
+
+foreach my $table(keys %{$tables}) {
+  print "Loading table $table\n";
+  my @date_fields = map {$_->[0]} grep {$_->[1] eq 'date'} @{$tables->{$table}->{'fields'}};
+  my @field_definitions = @{$tables->{$table}->{fields}};
+  my %field_definitions = map {$_->[0] => $_->[1]} @field_definitions;
+  my @fields_in_file = get_field_names($tables->{$table}->{'filename'});
+  create_table( $table, \@fields_in_file, \%field_definitions);  # If the table already exists this will just truncate it
+  load_data_infile( $tables->{$table}->{'filename'}, $table, \@fields_in_file, \%field_definitions );  #TODO
+  }
+
+
+  
+  
+die "ok\n";
+
 sub copy_and_unzip_file_into_temp {
   my $filename = shift;
-  my ($date, $y, $m, $d) = date_from_filename($filename);
+  my ($y, $m, $d) = @{+shift};
+  my $date = "$y-$m-$d";
 
   print "copy_and_unzip_file_into_temp: Loading $filename into temp\n";
   # If the source file isn't already copied to the temp directory, do so.
@@ -68,27 +68,41 @@ sub copy_and_unzip_file_into_temp {
   print "unzip $home/temp/$y-$m-$d.zip -d $home/temp\n";
   `unzip $home/temp/$y-$m-$d.zip -d $home/temp`;
   # If the source file is not already unzipped, unzip it.
-  my $master_filename;
-  if (-e "$home/temp/MASTER.txt") {rename "$home/temp/MASTER", "$home/temp/MASTER.txt";}
+
+  # Older export files didn't have the ".txt" suffix. Newer ones do.  #TODO put in loop through tables hash
+  if (-e "$home/temp/MASTER") {rename "$home/temp/MASTER", "$home/temp/MASTER.txt";}
+  if (-e "$home/temp/ACFTREF") {rename "$home/temp/ACFTREF", "$home/temp/ACFTREF.txt";}
+  if (-e "$home/temp/ENGINE") {rename "$home/temp/ENGINE", "$home/temp/ENGINE.txt";}
   }
 
 
-sub get_field_names_from_current_file {
+
+# Extracts column names from the first row of a comma-delimited file and returns an array of names safe for use
+# in a MySQL table.
+sub get_field_names {
+  my $filename = shift;
+
+  if ($v>1) {print "get_field_names with $filename\n\n";}
+
   # get the field names from the first row
-  open my $f, '<', "$home/temp/MASTER.txt";;
+  open my $f, '<', "$home/temp/$filename";;
   my $fields = <$f>;
   chomp $fields;
+
   $fields =~ s/\W+$//;  # Removes comma and any other odd characters at the end of the line
   $fields =~ s/^\W+//;  # Removes comma and any other odd characters at the front of the line
 
-  print $fields;
+  if ($v>1) {print "  \$fields: $fields";}
+
   # Split the header into an array of field names, changing all of the dashes, spaces, and parentheses to underscores
   # and then removing leading and trailing underscores from each field name
   @fields = map { local $_=$_; s/^_|_$//g; lc $_} map { local $_=$_; s/[- ()]/_/g; $_ } split ',', $fields;
-  print join(', ', @fields)."\n";
 
-  create_table(\@fields);
+  if ($v>1) {print "  returning: ".join(', ', @fields)."\n";}
+
+  return @fields;
   }
+
 
 
 # Given a year, month, and day, return the filename for that date.  If it doesn't exist, return false.
@@ -102,24 +116,31 @@ sub lookup_filename {
 
 
 sub create_table {
-  my $query = "create table if not exists MASTER (".(join(', ', map { "$_->[0] $_->[1]" } @{$master_fields} ) ).")";
-  print "\n\n$query\n\n";
+  my $tablename = shift;
+  my @fields = @{+shift};
+  my %field_definitions = %{+shift};
+
+  my $query = "create table if not exists $tablename (".(join(', ', map { "$_ $field_definitions{$_}" } @fields ) ).")";
+  if ($v) {print "\n\ncreate_table:$query\n\n";}
   $mysql->do($query);
-  $mysql->do("truncate MASTER"); # because of the "if not exists" clause we might not have created a new table.  In either case, ensure the table is empty.
-  load_data( );
+  $mysql->do("truncate $tablename"); # because of the "if not exists" clause we might not have created a new table.  In either case, ensure the table is empty.
   }
 
 
-sub load_data {
+
+sub load_data_infile {
+  my $filename = shift;
+  my $tablename = shift;
   my @fields = @{+shift};
   my $field_definitions = shift;
-  $query = "load data local infile '$home/temp/MASTER.txt' into table MASTER fields terminated by ',' enclosed by '\"' lines terminated by '\\r\\n' ignore 1 lines (".
+
+  $query = "load data local infile '$home/temp/$filename' into table $tablename fields terminated by ',' enclosed by '\"' lines terminated by '\\r\\n' ignore 1 lines (".
            join(',', map {"\@$_"} @fields).") set ".
-	   join(', ', map {"$_ = ".($field_definitions->{$_} eq 'date' ? "str_to_date(\@$_, '%Y%m%d%')" : "RTRIM(\@$_)") } @fields);
-  print "$query\n\n";
+	   join(', ', map {"$_ = ".($field_definitions->{$_} eq 'date' ? "str_to_date(\@$_, '%Y%m%d%')" : "LTRIM(RTRIM(\@$_))") } @fields);
+  if ($v) { print "load_data_infile: $query\n";}
   $mysql->do($query);
   if ($mysql->errstr) {print "Error: ".$mysql->errstr."\n";}
-  print "Data loaded.\n";
+  if ($v) { print "  Data loaded.\n";}
   }
 
 
