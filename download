@@ -13,7 +13,7 @@ aircraft_registration_url='http://registry.faa.gov/database/ReleasableAircraft.z
 
 print aircraft_registration_url
 
-local_aircraft_registration_archive=time.strftime('/home/doug/aircraft_registrations/%Y')
+local_aircraft_registration_archive=time.strftime('/var/aircraft/%Y')
 if not os.path.isdir(local_aircraft_registration_archive):
 	os.mkdir(local_aircraft_registration_archive)
 
@@ -27,6 +27,6 @@ fout.write(aircraft_registrations)
 fout.close
 
 # Copy files to catsmeat for processing
-import subprocess
-exitcode = subprocess.call(['rsync', '-ravz', local_aircraft_registration_archive, 'catsmeat:/home/doug/aircraft_registrations/data/'])
+#import subprocess
+#exitcode = subprocess.call(['rsync', '-ravz', local_aircraft_registration_archive, 'catsmeat:/home/doug/aircraft_registrations/data/'])
 

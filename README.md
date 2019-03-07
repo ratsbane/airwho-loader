@@ -20,3 +20,10 @@ To load the changes occuring between each of the 1300 files, we need something a
 I wrote a quick version of this last week and ran it on the 1300 files.  It loaded about 90 million change records into the MySQL table over several days, but as I looked at the data I realized that there were some problems - mostly duplicate records - caused mostly by dirty data.
 
 I decided to rework load_history and make it more robust and also something that could be scheduled on a cron job - if it's called daily it will refresh the master_changes table with new information, but if it skips a few days or more, it will automatically do the right thing and ensure master_changes is updated and correct.
+
+## download
+
+Gets the file from the FAA.
+Crontab
+15 7 *   *   *  /var/aircraft/bin/download
+
