@@ -79,7 +79,7 @@ sub compare_two_datasets {
   my @new = @{+shift};
   my $new_date = shift;
 
-  if ($v>1) {print "Comparing $old_date ($#old rows) with $new_date ($#new rows)\n";}
+  if ($v) {print "Comparing $old_date ($#old rows) with $new_date ($#new rows)\n";}
 
   # Convert $new and $old into hashes
   # The serial number is in position 1 and mfg/model code is in position 2.  Use that as the hash key.
