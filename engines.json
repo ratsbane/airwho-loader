@@ -1,0 +1,7 @@
+[ [ "code", "varchar(5)", "Positions (1-3) - Manufacturer Code Positions (4-5) - Model Code" ],
+  [ "mfr", "varchar(10)" ],
+  [ "model", "varchar(13)" ],
+  [ "type", "tinyint", "0: None; 1: Reciprocating; 2: Turbo-prop; 3: Turbo-shaft; 4: Turbo-jet; 5: Turbo-fan; 6: Ramjet; 7: 2 Cycle; 8: 4 Cycle; 9: Unknown; 10: Electric; 11: Rotary" ],
+  [ "horsepower", "integer unsigned", "Horsepower for engines types 1, 2, 3, 7, 8" ],
+  [ "thrust", "integer unsigned", "Thrust for engine types 4, 5, 6" ]
+]

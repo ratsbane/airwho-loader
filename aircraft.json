@@ -1,0 +1,12 @@
+[ [ "code", "varchar(7)", "Positions (1-3) - Manufacturer Code Positions (4-5) - Model Code Positions (6-7) - Series Code" ],
+  [ "mfr", "varchar(30)" ],
+  [ "model", "varchar(30)", "Name of the aircraft model and series." ],
+  [ "type_acft", "varchar(1)", "1 Glider 2 Balloon; 3: Blimp/Dirigible; 4: Fixed wing single engine; 5: Fixed wing multi engine; 6: Rotorcraft; 7: Weight-shift-control; 8: Powered Parachute 9: Gyroplane; H: Hybrid Lift; O: Other" ],
+  [ "type_eng", "varchar(2)", "0: None; 1: Reciprocating; 2: Turbo-prop; 3: Turbo-shaft; 4: Turbo-jet; 5: Turbo-fan; 6: Ramjet; 7: 2 Cycle; 8: 4 Cycle; 9: Unknown; 10: Electric; 11: Rotary" ],
+  [ "ac_cat", "varchar(1)", "1: Land; 2: Sea; 3: Amphibian" ],
+  [ "build_cert_ind", "bool" ],
+  [ "no_eng", "tinyint unsigned" ],
+  [ "no_seats", "smallint unsigned" ],
+  [ "ac_weight", "varchar(16)", "1: Up to 12,499; 2: 12,500-19,999; 3: 20,000+; 4: UAV up to 55;" ],
+  [ "speed", "smallint unsigned", "Aircraft average cruising speed in miles per hour. This data element is not present on all records." ]
+]
