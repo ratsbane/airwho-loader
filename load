@@ -134,9 +134,9 @@ sub load_data_infile {
   my @fields = @{+shift};
   my $field_definitions = shift;
 
-  $query = "load data local infile '$home/temp/$filename' into table $tablename fields terminated by ',' enclosed by '\"' lines terminated by '\\r\\n' ignore 1 lines (".
+  $query = "load data local infile '$home/temp/$filename' into table $tablename fields terminated by ',' lines terminated by '\\r\\n' ignore 1 lines (".
            join(',', map {"\@$_"} @fields).") set ".
-	   join(', ', map {"$_ = ".($field_definitions->{$_} eq 'date' ? "str_to_date(\@$_, '%Y%m%d%')" : "LTRIM(RTRIM(\@$_))") } @fields);
+	   join(', ', map {"$_ = ".($field_definitions->{$_} eq 'date' ? "str_to_date(\@$_, '%Y%m%d%')" : "TRIM(\@$_)") } @fields);
   if ($v) { print "load_data_infile: $query\n";}
   $mysql->do($query);
   if ($mysql->errstr) {print "Error: ".$mysql->errstr."\n";}
