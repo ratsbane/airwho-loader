@@ -3,7 +3,18 @@
 
 `sudo apt install postfix`
 
-## Add SPF and DKIM records to domain
+
+## Configure SPF and DKIM and add to host file at registrar
+
+`sudo apt install opendkim opendkim-tools`
+
+`sudo vim /etc/opendkim.conf` 
+
+`opendkim-genkey -t -s mail -d airwho.com`
+
+`sudo cp mail.private /etc/mail/dkim.key`
+
+
 
 `airwho.com.		3600	IN	TXT	"v=spf1 ip4:96.71.136.46 include:_spf.google.com ~all"
 airwho.com.		3600	IN	TXT	"v=DMARC1; p=none; rua=mailto:admin@airwho.com; ruf=mailto:admin.dmarc@airwho.com;"
