@@ -8,7 +8,7 @@
 
 See https://support.google.com/a/answer/33786
 
-
+`airwho.com.		3600	IN	TXT	"v=spf1 ip4:96.71.136.46 include:_spf.google.com ~all"`
 
 
 ## Configure DKIM
@@ -28,17 +28,16 @@ Copy mail.txt into the "p=" field in the host record.
 `default._domainkey.airwho.com. 3600 IN	TXT	"v=DKIM1; h=sha256; k=rsa; t=y; p= MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAs4tLFX82rV4nn25LA8Z/29AeKIbaScnaDw8sIh1s0DfpQfxN/p/xlRMGagV9eg3SSdOVwwksTK/vYWmpUykrVgjWb930tAqZpBIuCGfBDtBkEue7ChDjlQVBCiTK0tqcWEFgHq6PBQtT7Pd8BS4YweiJHFjKWH7yvOCuTfxZL0ktE/GhH" "XFrBgZyWmO26PnWbvqKMHn5xAmPGZ0gXxlrUVATdb4LcGc1JsPPjtAnsSQvIPvjeGNnOGSpXOk5GV2++Tz2A7KPYdqCD1IrPap96RW6dH5efknChhyV812ZPy5U5cJSsLg/QPGgoK56o9oxCmCu32ZGyB5U4rlszg4cVQIDAQAB"`
 
 
-
-
-
-`airwho.com.		3600	IN	TXT	"v=spf1 ip4:96.71.136.46 include:_spf.google.com ~all"
-airwho.com.		3600	IN	TXT	"v=DMARC1; p=none; rua=mailto:admin@airwho.com; ruf=mailto:admin.dmarc@airwho.com;"
-airwho.com.		3600	IN	TXT	"v=DKIM1; h=sha256; k=rsa; t=y; p= MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAs4tLFX82rV4nn25LA8Z/29AeKIbaScnaDw8sIh1s0DfpQfxN/p/xlRMGagV9eg3SSdOVwwksTK/vYWmpUykrVgjWb930tAqZpBIuCGfBDtBkEue7ChDjlQVBCiTK0tqcWEFgHq6PBQtT7Pd8BS4YweiJHFjKWH7yvOCuTfxZL0ktE/GhH" "XFrBgZyWmO26PnWbvqKMHn5xAmPGZ0gXxlrUVATdb4LcGc1JsPPjtAnsSQvIPvjeGNnOGSpXOk5GV2++Tz2A7KPYdqCD1IrPap96RW6dH5efknChhyV812ZPy5U5cJSsLg/QPGgoK56o9oxCmCu32ZGyB5U4rlszg4cVQIDAQAB"
-`
-
-Note that something's wrong with the DKIM and DMARC records.  See https://toolbox.googleapps.com/apps/checkmx/check?domain=airwho.com&dkim_selector=
+See https://toolbox.googleapps.com/apps/checkmx/check?domain=airwho.com&dkim_selector=
 
 Another DKIM tester: http://www.appmaildev.com/en/domainkey
+
+
+## Configure DMARC
+
+`airwho.com.		3600	IN	TXT	"v=DMARC1; p=none; rua=mailto:admin@airwho.com; ruf=mailto:admin.dmarc@airwho.com;"`
+
+(This is not correct.)
 
 
 ## Configure TLS encryption
@@ -60,15 +59,15 @@ smtpd_tls_key_file=/etc/ssl/private/ssl-cert-snakeoil.key`
 to be
 
 `smtpd_tls_cert_file=/etc/ssl/private/airwho/fullchain.pem
-smtpd_tls_key_file=/etc/ssl/private/airwho/privkey.pem`
+ smtpd_tls_key_file=/etc/ssl/private/airwho/privkey.pem`
 
 and add the following lines:
 
 `smtp_use_tls=yes
-smtp_tls_loglevel = 1
-smtp_tls_security_level = may
-smtp_tls_cert_file=/etc/ssl/private/airwho/fullchain.pem
-smtp_tls_key_file=/etc/ssl/private/airwho/privkey.pem`
+ smtp_tls_loglevel = 1
+ smtp_tls_security_level = may
+ smtp_tls_cert_file=/etc/ssl/private/airwho/fullchain.pem
+ smtp_tls_key_file=/etc/ssl/private/airwho/privkey.pem`
 
 `service postfix restart`
 
