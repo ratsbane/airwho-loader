@@ -53,24 +53,24 @@ Rsync keys from webserver into that directory.  NOTE! When certbot renews those,
 
 Edit the lines
 
-`smtpd_tls_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem
+`smtpd_tls_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem  
 smtpd_tls_key_file=/etc/ssl/private/ssl-cert-snakeoil.key`
 
 to be
 
-`smtpd_tls_cert_file=/etc/ssl/private/airwho/fullchain.pem
+`smtpd_tls_cert_file=/etc/ssl/private/airwho/fullchain.pem  
  smtpd_tls_key_file=/etc/ssl/private/airwho/privkey.pem`
 
 and add the following lines:
 
-`smtp_use_tls=yes
- smtp_tls_loglevel = 1
- smtp_tls_security_level = may
- smtp_tls_cert_file=/etc/ssl/private/airwho/fullchain.pem
+`smtp_use_tls=yes  
+ smtp_tls_loglevel = 1  
+ smtp_tls_security_level = may  
+ smtp_tls_cert_file=/etc/ssl/private/airwho/fullchain.pem  
  smtp_tls_key_file=/etc/ssl/private/airwho/privkey.pem`
 
 `service postfix restart`
 
-(While restarting Postfix it's useful to tail the mail.log in another terminal)
+(While restarting Postfix it's useful to tail the mail.log in another terminal)  
 `sudo tail -f /var/log/mail.log`
 
