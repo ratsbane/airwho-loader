@@ -51,7 +51,9 @@ sub all_files {
 sub get_one_before {
   my $self = shift;
   my $date = shift;
-  while ( $c < $#{$self->{'all'}} && (date_from_filename($self->{'all'}->[$c]) lt $date) ) { $self->{'current_file_index'}++; }
+  my $c=0;
+  while ( $c < $#{$self->{'all'}} && (date_from_filename($self->{'all'}->[$c]) lt $date) ) {$c++; }
+  $self->{'current_file_index'} = $c;
   return $self->_load_file()
   }
 
