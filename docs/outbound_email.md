@@ -6,6 +6,9 @@
 
 ## Configure SPF and DKIM and add to host file at registrar
 
+See https://support.google.com/a/answer/33786
+
+
 `sudo apt install opendkim opendkim-tools`
 
 `sudo vim /etc/opendkim.conf` 
@@ -22,5 +25,15 @@ airwho.com.		3600	IN	TXT	"v=DKIM1; h=sha256; k=rsa; t=y; p= MIIBIjANBgkqhkiG9w0B
 `
 
 Note that something's wrong with the DKIM and DMARC records.  See https://toolbox.googleapps.com/apps/checkmx/check?domain=airwho.com&dkim_selector=
+
+
+## Configure TLS encryption
+
+See https://support.google.com/mail/answer/6330403
+
+`sudo mkdir /etc/ssl/private/airwho`
+
+Rsync keys from webserver into that directory.  NOTE! When certbot renews those, we will have to recopy them.
+
 
 
