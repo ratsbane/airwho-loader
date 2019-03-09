@@ -7,13 +7,12 @@ import urllib2, os, time
 
 # refer to http://www.faa.gov/licenses_certificates/aircraft_certification/aircraft_registry/releasable_aircraft_download/
 
-# Define where we shall get the registration file and where we shall put it.
-#aircraft_registration_url=time.strftime('http://registry.faa.gov/database/AR%m%Y.zip')
 aircraft_registration_url='http://registry.faa.gov/database/ReleasableAircraft.zip';
 
 print aircraft_registration_url
 
 local_aircraft_registration_archive=time.strftime('/var/aircraft/%Y')
+
 if not os.path.isdir(local_aircraft_registration_archive):
 	os.mkdir(local_aircraft_registration_archive)
 
@@ -26,7 +25,11 @@ fout=file(local_aircraft_registration_archive+'/'+time.strftime('%Y-%m-%d_%H_%M_
 fout.write(aircraft_registrations)
 fout.close
 
-# Copy files to catsmeat for processing
-#import subprocess
-#exitcode = subprocess.call(['rsync', '-ravz', local_aircraft_registration_archive, 'catsmeat:/home/doug/aircraft_registrations/data/'])
+# Load files into SQL
+import subprocess
+
+exitcode = subprocess.call(['/var/aircraft/bin/load', +time.strftime('%Y-%m-%d') )
+
+exitcode = subprocess.call(['/var/aircraft/bin/load_history' )
+
 
