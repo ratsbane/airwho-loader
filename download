@@ -28,7 +28,7 @@ fout.close
 # Load files into SQL
 import subprocess
 
-exitcode = subprocess.call(['/var/aircraft/bin/load', +time.strftime('%Y-%m-%d') )
+exitcode = subprocess.call(['/var/aircraft/bin/load', time.strftime('%Y-%m-%d') )
 
 exitcode = subprocess.call(['/var/aircraft/bin/load_history' )
 
