@@ -57,31 +57,39 @@ Create a directory to hold the opendkim configuration and keys:
     doug@airwho:/etc/opendkim$ sudo mkdir /etc/opendkim/keys
 
 Set appropriate permissions on those files:
+
     doug@airwho:/etc/opendkim$ sudo chown -R opendkim:opendkim /etc/opendkim
     doug@airwho:/etc/opendkim$ sudo chmod go-rw /etc/opendkim/keys
 
 Create the signing table:
+
     doug@airwho:/etc/opendkim$ sudo vim /etc/opendkim/signing.table
 
 Put the following text in that file.  Note that the word "default" is the selector we will use later.  It can be anything, as long as it's consistent:
+
     *@airwho.com default._domainkey.airwho
 
 Create the key table file:
+
     doug@airwho:/etc/opendkim$ sudo vim /etc/opendkim/key.table
 
 Put the following text in that file:
+
     default._domainkey.airwho    airwho.com:default:/etc/opendkim/keys/airwho.com/default.private
 
 Create the trusted hosts file:
+
     sudo mkdir /etc/opendkim/trusted.hosts
 
 Put the following text in that file:
+
     127.0.0.1
     localhost
     
     *.airwho.com
 
 Create a subdirectory under "key" for airwho:
+
     doug@airwho:/etc/opendkim$ sudo mkdir /etc/opendkim/keys/airwho.com
 
 
@@ -94,12 +102,14 @@ Generate a key pair.  This creates two files in your current directory, "mail.pr
     opendkim-genkey: DNS TXT record written to default.txt
 
 Set file owner of the private key:
+
     doug@airwho:/etc/opendkim$ sudo chown opendkim:opendkim /etc/opendkim/keys/airwho.com/default.private
 
 Create two host records, a policy record with the host \_domainkey and the other one with the host including your selector.  I'm using "default" as the selector.
 
 ### Policy DKIM record
-    \_domainkey.airwho.com.	3600	IN	TXT	"o=-"
+
+    _domainkey.airwho.com.	3600	IN	TXT	"o=-"
 
 The dash means all emails from this domain _must_ be signed with the DKIM key.  (A tilde means _should_ be signed)
 
