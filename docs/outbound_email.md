@@ -93,7 +93,7 @@ Create a subdirectory under "key" for airwho:
     doug@airwho:/etc/opendkim$ sudo mkdir /etc/opendkim/keys/airwho.com
 
 
-Generate a key pair.  This creates two files in your current directory, "mail.private" and "mail.txt"  You will move the private key to a secure place, /etc/dkimkeys, and paste the contents of the public one, mail.txt into a DNS host record.
+Generate a key pair.  This creates two files in your current directory, "default.private" and "default.txt"
 
     doug@airwho:/etc/opendkim$ sudo opendkim-genkey -b 2048 -d airwho.com -D /etc/opendkim/keys/airwho.com -s default -v
     opendkim-genkey: generating private key
@@ -127,6 +127,7 @@ Confirm that host record:
     dig -t txt default._domainkey.airwho.com
 
 Test.  Note that the "key not secure" message is probably because the private key file is owned by opendkim user and not root, who we are testing as (TODO: is this correct?):
+
     doug@airwho:/etc/opendkim$ sudo opendkim-testkey -d airwho.com -s default -vvv
     opendkim-testkey: using default configfile /etc/opendkim.conf
     opendkim-testkey: checking key 'default._domainkey.airwho.com'
@@ -150,6 +151,7 @@ Tell Postfix to use OpenDKIM:
     doug@airwho:/etc/opendkim$ sudo vim /etc/postfix/main.cf
 
 Add the following lines anywhere:
+
     # Milter configuration
     milter_default_action = accept
     milter_protocol = 6
@@ -214,6 +216,7 @@ and add the following lines:
     service postfix restart
 
 (While restarting Postfix it's useful to tail the mail.log in another terminal)  
+
     sudo tail -f /var/log/mail.log
 
 
