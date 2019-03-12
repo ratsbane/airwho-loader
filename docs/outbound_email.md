@@ -213,12 +213,14 @@ and add the following lines:
     smtp_tls_cert_file=/etc/ssl/private/airwho/fullchain.pem  
     smtp_tls_key_file=/etc/ssl/private/airwho/privkey.pem
 
+    smtp_tls_CApath = /etc/ssl/certs
+    smtpd_tls_CApath = /etc/ssl/certs
+
     service postfix restart
 
 (While restarting Postfix it's useful to tail the mail.log in another terminal)  
 
     sudo tail -f /var/log/mail.log
-
 
 
 
