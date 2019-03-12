@@ -24,6 +24,8 @@ I decided to rework load_history and make it more robust and also something that
 ## download
 
 Gets the file from the FAA.
+
 Crontab
-15 7 *   *   *  /var/aircraft/bin/download
+
+    15 7 *   *   *  /var/aircraft/bin/download
 
