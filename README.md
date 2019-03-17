@@ -25,7 +25,9 @@ I decided to rework load_history and make it more robust and also something that
 
 Gets the file from the FAA.
 
-Crontab
+    MAILTO=doug@airwho.com
+    # m h  dom mon dow   command
+    15   7   *   *   1-5   /var/aircraft/bin/download
 
-    15 7 *   *   *  /var/aircraft/bin/download
+
 
