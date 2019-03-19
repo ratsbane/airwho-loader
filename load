@@ -3,11 +3,14 @@
 use DBI;
 use JSON::Parse 'json_file_to_perl';
 
-my $v=2;  # verbosity level
+my $v=1;  # verbosity level
 
 my $date = $ARGV[0];
 
+my ($y, $m, $d);
+
 my ($path_to_this) = $0 =~ /^(.*\/)\w+$/;
+
 unless (($y, $m, $d) = $date =~ /(\d{4})\W(\d{2})\W(\d{2})/) {die "\nUsage: $path_to_this"."load yyyy/mm/dd\n\n";}
 
 my $tables = { "master" => { "fields" => json_file_to_perl($path_to_this.'master.json'),
@@ -51,10 +54,10 @@ die "ok\n";
 
 sub copy_and_unzip_file_into_temp {
   my $filename = shift;
-  my ($y, $m, $d) = @{+shift};
+  my ($y, $m, $d) = (shift, shift, shift);
   my $date = "$y-$m-$d";
 
-  print "copy_and_unzip_file_into_temp: Loading $filename into temp\n";
+  print "copy_and_unzip_file_into_temp: Loading $filename into temp as $date.zip\n";
   # If the source file isn't already copied to the temp directory, do so.
   unless (-e "$home/temp/$date.zip") {
     if ($filename) {
