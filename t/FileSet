@@ -31,8 +31,11 @@ ok( ! $r, 'copying and unzipping returned false for invalid file');
 ok( ! -e '/var/aircraft/temp/MASTER.txt', "MASTER.txt file is NOT there when it shouldn't be");
 
 $fs->{'current_file_index'}=1;
-($data, $date) = $fs->_load_file();
+($data, $date) = $fs->get_file();
 
 ok( $date eq '2007-05-23', 'load_file returns the correct date');
 
+# TODO
+# New test to confirm that get_next will return the next file including the last file that exists.
+# New test to ensure this works no matter what the current home directory
 
