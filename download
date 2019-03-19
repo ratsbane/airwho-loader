@@ -23,13 +23,14 @@ f.close()
 
 fout=file(local_aircraft_registration_archive+'/'+time.strftime('%Y-%m-%d_%H_%M_%S'), 'wb')
 fout.write(aircraft_registrations)
-fout.close
+fout.close()
+time.sleep(10)
 
 # Load files into SQL
 import subprocess
 
-exitcode = subprocess.call(['/var/aircraft/bin/load', time.strftime('%Y-%m-%d') )
+exitcode = subprocess.call(['/var/aircraft/bin/load', time.strftime('%Y-%m-%d')] )
 
-exitcode = subprocess.call(['/var/aircraft/bin/load_history' )
+exitcode = subprocess.call(['/var/aircraft/bin/load_history'] )
 
 
