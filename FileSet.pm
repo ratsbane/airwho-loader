@@ -42,36 +42,38 @@ sub all_files {
         }
       }
     }
+    #print "All files to process: ".join("\n", @{$self->{'all'}})."\n";
   }
 
 
-# Given a date, returns the file contents and name of the one before the date.
-# If there is not one before, return an empty array and string
-# Also sets the object's index to point to that file.
-sub get_one_before {
+# Given a date, sets the object instance's cursor to 
+# two files before that, such that the file comparison will compare two files just before $date.
+sub set_index_before {
   my $self = shift;
   my $date = shift;
   my $c=0;
-  while ( $c < $#{$self->{'all'}} && (date_from_filename($self->{'all'}->[$c]) lt $date) ) {$c++; }
+  while ( $c < $#{$self->{'all'}} && (date_from_filename($self->{'all'}->[$c]) le $date) ) {$c++; }
   $self->{'current_file_index'} = $c;
-  return $self->_load_file()
+  if (1 or $main::v) {print "set_index_before: \$date is $date and \$c is $c and the file is $self->{'all'}->[$c]\n";}
   }
 
 
-
-# iterates through the list of files.  returns data from file and date of file.  At the end of the list, returns nothing (false)
-sub get_next {
+# Increments file index and returns true if there is a next file; false otherwise
+sub move_next {
   my $self = shift;
-  if ($self->{'current_file_index'} < $#{$self->{'all'}}) {
-    $self->{'current_file_index'}++;
-    return $self->_load_file();   # returns an array of two things: ref to dataset and scalar date string
-    }
-  else {return undef;}
+  return ($self->{'current_file_index'}++ < $#{$self->{'all'}});
   }
 
+
+# Decrements file index and returns true if there is a previous file; false otherwise
+sub move_prev {
+  my $self = shift;
+  return ($self->{'current_file_index'}-- > 0);
+  }
+ 
 
 # uses current_file_index to retrieve contents of array.  Returns ref to array of arrays of contents and scalar date string
-sub _load_file {
+sub get_file {
   my $self = shift;
  
   my @rows = ();

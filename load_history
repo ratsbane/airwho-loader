@@ -3,13 +3,13 @@
 use DBI;
 use JSON::Parse 'json_file_to_perl';
 
-use lib '.';
+use lib '/var/aircraft/bin/';
 use FileSet;
 use strict;
 use warnings;
 
 my $v=1;  # verbose
-
+my $dry_run=0;
 
 # Fields (columns) present in the MASTER or MASTER.txt files
 # [ field name, sql data type ]
@@ -60,20 +60,25 @@ if ($v) {print "Connected to database\n";}
 # Load all of the files in the import_files directory structure starting with $max_date.
 # At this point we don't have record that the previous run was completed successfully, so we have to consider that the
 # changes stored for $max_date might not be complete.  We want inserting a/d/c records into master_changes to be idempotent
-# so it's safe to redo some or all of the changes for $max_date.  For efficiency, consider adding a table to record which 
-# files have been successfully imported.
+# so it's safe to redo some or all of the changes for $max_date.
+# TODO For efficiency, consider adding a table to record which files have been successfully imported.
+#
 my ($max_date) = @{$mysql->selectcol_arrayref('select max(date_from) from master_changes')};
 if ($v) {print "\$max_date is $max_date\n";}
 
 # instantiate the files list as all available import files
 my $fileset = FileSet->new();
-if ($v) {print "We have fileset.\n";}
 
-my ($o, $o_date) = $fileset->get_one_before($max_date); # If $maxdate represents the first one then get_one_before will
-if ($v) {print "Starting with date $o_date\n";}
+$fileset->set_index_before($max_date);  # sets the fileset cursor to the file on or before $max_date.
+
+$fileset->move_prev(); # We're going to compare the file before max_date with the file at max_date
+
+my ($o, $o_date) = $fileset->get_file();
 
 # return an empty array, which means that everything in $n will be added, which is what we want.
-while (my ($n, $n_date) = $fileset->get_next()) {
+while ($fileset->move_next()) {
+  my ($n, $n_date) = $fileset->get_file();
+  if ($v) {print "Now comparing $o_date with $n_date\n";}
   compare_two_datasets($o, $o_date, $n, $n_date);
   $o = $n;
   $o_date = $n_date;
@@ -97,7 +102,10 @@ sub compare_two_datasets {
 
   # Using a prepared statement is much faster than not (but still the biggest bottlneck)
   my @fields = map {$_->[0]} @{$master_fields};
-  my $insert_into_master_stmt = $mysql->prepare('insert into master_changes ( date_from, date_to, change_type,'.join(', ', @fields).') values (?,?,?'. (',?'x(scalar @fields) ).')');
+  my $insert_into_master_stmt;  # MySQL prepared statement
+  unless ($dry_run) {
+    $insert_into_master_stmt = $mysql->prepare('insert into master_changes ( date_from, date_to, change_type,'.join(', ', @fields).') values (?,?,?'. (',?'x(scalar @fields) ).')');
+    }
 
   my $field_count = scalar @{$master_fields};
 
@@ -110,12 +118,16 @@ sub compare_two_datasets {
     if ( ! $old{$key}) {
       if ($v>1) {print "Added: $key\n";}
       $added++;
-      $insert_into_master_stmt->execute( $old_date, $new_date, 'A', ( map {$master_fields->[$_]->[1] eq 'date' ? format_date($n->[$_]) : $n->[$_] } 0..($field_count-1) ) );
+      unless ($dry_run) {
+        $insert_into_master_stmt->execute( $old_date, $new_date, 'A', ( map {$master_fields->[$_]->[1] eq 'date' ? format_date($n->[$_]) : $n->[$_] } 0..($field_count-1) ) );
+        }
       }
     elsif ( ! (@{$new{$key}} ~~ @{$old{$key}})) {
       if ($v>1) {print "Changed: $key\n";}
       $changed++;
-      $insert_into_master_stmt->execute( $old_date, $new_date, 'C', ( map {$master_fields->[$_]->[1] eq 'date' ? format_date($n->[$_]) : $n->[$_] } 0..($field_count-1) ) );
+      unless ($dry_run) {
+        $insert_into_master_stmt->execute( $old_date, $new_date, 'C', ( map {$master_fields->[$_]->[1] eq 'date' ? format_date($n->[$_]) : $n->[$_] } 0..($field_count-1) ) );
+        }
       }
     }
   # Iterate through $old, looking for anything not in $new - that will give us deleted records
@@ -127,7 +139,9 @@ sub compare_two_datasets {
     unless ($new{$key}) {
       if ($v>1) {print "Deleted: $key\n";}
       $deleted++;
-      $insert_into_master_stmt->execute( $old_date, $new_date, 'D', ( map {$master_fields->[$_]->[1] eq 'date' ? format_date($o->[$_]) : $o->[$_] } 0..($field_count-1) ) );
+      unless ($dry_run) {
+        $insert_into_master_stmt->execute( $old_date, $new_date, 'D', ( map {$master_fields->[$_]->[1] eq 'date' ? format_date($o->[$_]) : $o->[$_] } 0..($field_count-1) ) );
+        }
       }
     }
   if ($v) {print "Changed: $changed; Added: $added; Deleted: $deleted\n";}
@@ -142,8 +156,4 @@ sub format_date {
   if ($y && $m && $d) {return "$y-$m-$d";}
   else {return undef;}
   }
-
-
-
-
 
